@@ -1,0 +1,2 @@
+"""Here will lie the equations that take pressures and turn them into mdots, and vice versa.
+Also maybe some webber number droplet mixing math stuff idk thats for the distant future when we actually design an injector"""
