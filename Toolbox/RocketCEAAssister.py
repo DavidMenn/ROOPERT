@@ -5,8 +5,8 @@ C = CEA_Obj( oxName='LOX', fuelName='LH2')
 
 import numpy as np
 """
-
-def makeEthanolBlend(ethanolPercent)
+from rocketcea.cea_obj import add_new_fuel
+def makeEthanolBlend(ethanolPercent):
     card_str = f"""
     fuel C2H5OH(L)  C 1.0   H 6.0   O 1.0    wt%={ethanolPercent}
     h,cal=-66326.482      t(k)=298.15   rho=.789
