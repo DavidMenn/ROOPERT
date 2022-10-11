@@ -3,6 +3,7 @@ import sympy as sym
 import difflib
 from rocketcea.cea_obj import CEA_Obj, add_new_fuel
 import Toolbox.RocketCEAAssister as RA
+import re as regex
 
 def SpreadsheetSolver(args : dict, defaults : dict = None):
     paramnames = [
@@ -24,7 +25,8 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
     'l_star', # m, volume cc/area throat
     'mol_weight', # kg/mol
     'gamma', # in cc
-    'gamme_exit', # in exit
+    'gamma_exit', # in exit
+    'gamma_throat', # in throat
     'isp', # s
     'temp_c', # K, chamber temp
     'rg', # specific gas constant (SI units if what they are)
@@ -67,21 +69,47 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
         params['g'] = 9.81
         params['pe'] = 14.7 * 6894.76
 
-    if params('CEA') is None # need to have cea object to do other stuff sio make sure to get this done first
-        RA.makeEthanolBlend(int(re.search(r'\d+', args['fuelname']).group()))
-        params['CEA'] = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'])
-
     for arg in list(args):
         try:
             params[arg] = args[arg]
         except:
             try:
-                print("Parameter" + arg + "isn't supported or is mispelled. Did you mean " + difflib.get_close_matches(arg,paramnames))
+                print("Parameter" + arg + "isn't supported or is mispelled. Did you mean " + difflib.get_close_matches(
+                    arg, paramnames) + "? That's what I'm going to use!")
+                params[difflib.get_close_matches(arg, paramnames)] = args[difflib.get_close_matches(arg, paramnames)]
             except:
                 print("Parameter" + arg + "isn't supported or is mispelled")
+
+    if params['CEA'] is None: # need to have cea object to do other stuff sio make sure to get this done first
+        RA.makeEthanolBlend(int(regex.search(r'\d+', args['fuelname']).group()))
+        if params['rm'] is None:
+            params['rm'] = rm(params)
+        if params['pc'] is None:
+            params['pc']  = pc(params)
+        if params['er'] is None:
+            params['er'] = er(params)
+        params['CEA'] = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'])
+        (params['mol_weight'],params['gamma']) = params['CEA'].get_Chamber_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
+        ,  # in cc
+        params['gamma_exit'],  # in exit
+        params['gamma_throat'],  # in throat
+        params['isp'],  # s
+        params['temp_c',  # K, chamber temp
+        params['rg',  # specific gas constant (SI units if what they are)
+        params['pr_throat',
+        params['rho_throat',
+        params['temp_e',
+        params['v_exit',
+        params['a_exit',
+        params['mach_exit',
+        params['temp_throat',
+        params['p_throat',
+        params['v_throat',
+
+
     for param in list(params):
         if params[param] is None:
-            params(param) = locals()[param](params)
+            params[param] = locals()[param](params)
 
     return params
 
@@ -119,10 +147,17 @@ def g(params): #m/s^2 his hsould never be called
     print('this should not be called this is a default value')
 def rm(params): #o/f by weight
     try:
+        return parms.CEA.getMRforER(ERphi=1)
+    except:
+        print('INSTALL ROCKETCEA IDIOT')
+
 
 
 def phi(params): #ratio from stoich (1 is stoich, >1 is fuel rich)
-def at(params): # m^2, area of throat
+    temp = get_eqratio(Pc=params.pc, MR=params.rm)
+    return temp[0]
+def at(params): # m^2, area of throat assume choked at throat
+    return AreaForChokedFlow(params.CEA,T,gam,mdot,specificR)
 def rt(params): # m, radius of throat
 def cr(params): # contraction ratio
 def rc(params): # m, combustion chamber radius
@@ -147,6 +182,14 @@ def mdot(params):
 def mdot_ox(params):
 def mdot_fuel(params):
 def er(params):
+    er = 1
+    temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=er, Pamb=params['pe'], frozen=0, frozenAtThroat=0)
+    while temp[1] == "UnderExpanded":
+        er=er++
+        temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=er, Pamb=params['pe'], frozen=0,
+                                                  frozenAtThroat=0)
+    return er
+
 def cstar(params):
 def cf(params):
 def c_eff(params):
