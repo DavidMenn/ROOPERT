@@ -24,3 +24,6 @@ def AreaForChokedFlow(p,T,gam,mdot,specificR):
     pt=totalP(p,gam,1)
     return mdot * math.sqrt(Tt) / pt / math.sqrt(gam / specificR) / (
                 (1 + (gam - 1) / 2) ^ (-(gam + 1) / (2 * (gam - 1))))
+
+def RtoK(degR):
+    return degR*5/9

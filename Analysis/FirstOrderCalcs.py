@@ -109,7 +109,7 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
 
     for param in list(params):
         if params[param] is None:
-            params[param] = locals()[param](params)
+            params[param] = globals()[param](params)
 
     return params
 

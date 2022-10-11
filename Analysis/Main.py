@@ -7,6 +7,8 @@ import Toolbox.RocketCEAAssister as RA
 import Toolbox.IsentropicEquations as IE
 import difflib
 import re as regex
+from rocketprops.rocket_prop import get_prop
+import Toolbox.Constant as const
 import matplotlib.pyplot as plt
 
 #xlist = np.linspace(0, .35, 1000)
@@ -82,12 +84,12 @@ def main():
     params = dict.fromkeys(paramnames)
 
     args = {
-        'thrust' : 3000*4.448218, #Newtons
+        'thust' : 3000*const.lbToN, #Newtons
         'time' : 50, #s
-        'rho_ox' : 1141, #Kg/M^3
-        'rho_fuel' : 842,
-        'pc' : 350,
-        'pe' : 10.5,
+        #'rho_ox' : 1141, #Kg/M^3
+        #'rho_fuel' : 842,
+        'pc' : 350 * const.psiToPa,
+        'pe' : 10.5 * const.psiToPa,
         'phi' : 1,
         'mdot' : 18,
         'fuelname' : 'Ethanol_75',
@@ -97,13 +99,13 @@ def main():
     params['pe'] = 14.7 * 6894.76
 
     for arg in list(args):
-        try:
+        if arg in paramnames:
             params[arg] = args[arg]
-        except:
+        else:
             try:
-                print("Parameter" + arg + "isn't supported or is mispelled. Did you mean " + difflib.get_close_matches(
-                    arg, paramnames) + "? That's what I'm going to use!")
-                params[difflib.get_close_matches(arg, paramnames)] = args[difflib.get_close_matches(arg, paramnames)]
+                print("Parameter " + arg + " isn't supported or is mispelled. Did you mean " +
+                      difflib.get_close_matches(arg, paramnames)[0] + "? That's what I'm going to use!")
+                params[difflib.get_close_matches(arg, paramnames)[0]] = args[arg]
             except:
                 print("Parameter" + arg + "isn't supported or is mispelled")
 
@@ -128,8 +130,11 @@ def main():
         molandgam = params['CEA'].get_Chamber_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
         params['mol_weight'] = molandgam[0][0]
         params['gamma'] = molandgam[0][1]
-        #params['gamma_exit'],  # in exit
-        #params['gamma_throat'],  # in throat
+        molandgam = params['CEA'].get_exit_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
+        params['gamma_exit'] = molandgam[0][1]  # in exit
+        molandgam = params['CEA'].get_Throat_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
+        params['gamma_throat'] = molandgam[0][1]
+
         #params['isp'],  # s
         #params['temp_c',  # K, chamber temp
         #params['rg',  # specific gas constant (SI units if what they are)
@@ -171,10 +176,30 @@ def impulse(params): #N*s
         print('Could not calculate impulse')
         return None
 def rho_ox(params): #Kg/M^3 IMPLEMENT THIS USING FLUID PROPS
-    print('Could not calculate RHO_OX')
+    try:
+        pObj = get_prop(params['oxname'])
+        return 1000*pObj.SG_compressed(pObj.TdegRAtPsat(40),
+                                  params['pc'] / const.psiToPa)
+    except:
+        print("rocketProps busted lol")
     return None
 def rho_fuel(params): #Kg/M^3MPLEMENT THIS USING FLUID PROPS
-    print('Could not calculate RHO_FUel')
+    try:
+        pObj = get_prop(params['fuelname'])
+        return 1000 * pObj.SG_compressed(pObj.TdegRAtPsat(params['pc'] / const.psiToPa),
+                                         params['pc'] / const.psiToPa)
+    except AttributeError:
+        print('Fuel does not exist, assuming its a water ethanol blend')
+        ethpercent = int(regex.search(r'\d+', params['fuelname']).group())/100
+        pObj = get_prop("ethanol")
+        ethdens = 1000 * pObj.SG_compressed(293*const.degKtoR,
+                                         params['pc'] / const.psiToPa)
+        pObj = get_prop("water")
+        waterdens = 1000 * pObj.SG_compressed(293 * const.degKtoR,
+                                            params['pc'] / const.psiToPa)
+        return ethpercent*ethdens +(1-ethpercent)*waterdens
+    except:
+        print("rocketProps busted lol")
     return None
 def pc(params): #Pa, calculate using throat conditions and backtrack
     print('You should input PC, will set up calculator later, now its just 700 psi (4.82 mpa)')
@@ -224,13 +249,13 @@ def mdot_ox(params):
 def mdot_fuel(params):
 """
 def er(params):
-    er = 1
-    temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=er, Pamb=params['pe'], frozen=0, frozenAtThroat=0)
-    while temp[1] == "UnderExpanded":
-        er=er+1
-        temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=er, Pamb=params['pe'], frozen=0,
+    eps = 1
+    temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=eps , Pamb=params['pe'], frozen=0, frozenAtThroat=0)
+    while int(regex.search(r'\d+',temp[1]).group())*const.psiToPa - round(params['pe']) > 100:
+        eps =eps +.1
+        temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=eps , Pamb=params['pe'], frozen=0,
                                                   frozenAtThroat=0)
-    return er
+    return eps
 """
 def cstar(params):
 def cf(params):
