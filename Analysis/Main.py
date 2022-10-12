@@ -5,11 +5,13 @@ from rocketcea.cea_obj_w_units import CEA_Obj
 import Toolbox.RListGenerator as RListGenerator
 import Toolbox.RocketCEAAssister as RA
 import Toolbox.IsentropicEquations as IE
+import Toolbox.RocketEquation as RE
 import difflib
 import re as regex
 from rocketprops.rocket_prop import get_prop
 import Toolbox.Constant as const
 import matplotlib.pyplot as plt
+import FirstOrderCalcs as FAC
 
 #xlist = np.linspace(0, .35, 1000)
 #rlist = RListGenerator.sharpRList(xlist, .2, .07, .24, .02, .35, .06) #xlist, xns, rc, xt, rt, xe, re
@@ -24,257 +26,57 @@ import matplotlib.pyplot as plt
 
 #print( s )
 def main():
-    paramnames = [
-        'thrust',  # Newtons
-        'time',  # s
-        'impulse',  # N*s
-        'rho_ox',  # Kg/M^3
-        'rho_fuel',  # Kg/M^3
-        'pc',  # Pa
-        'pe',  # Pa
-        'g',  # m/s^2
-        'rm',  # o/f by weight
-        'phi',  # ratio from stoich (1 is stoich, >1 is fuel rich)
-        'at',  # m^2, area of throat
-        'rt',  # m, radius of throat
-        'cr',  # contraction ratio
-        'rc',  # m, combustion chamber radius
-        'ac',  # m^2, area combustion chamber
-        'l_star',  # m, volume cc/area throat
-        'mol_weight',  # kg/mol
-        'gamma',  # in cc
-        'gamma_exit',  # in exit
-        'gamma_throat',  # in throat
-        'isp',  # s
-        'temp_c',  # K, chamber temp
-        'rg',  # specific gas constant (SI units if what they are)
-        'pr_throat',
-        'rho_throat',
-        'temp_e',
-        'v_exit',
-        'a_exit',
-        'mach_exit',
-        'temp_throat',
-        'p_throat',
-        'v_throat',
-        'mdot',
-        'mdot_ox',
-        'mdot_fuel',
-        'er',
-        'cstar',
-        'cf',
-        'c_eff',
-        'rho_av',
-        'vc',
-        'theta_con',
-        'lc',
-        'theta_div',
-        'ln_conical',
-        'ln_bell',
-        'ae',
-        're',
-        'nv',
-        'nvstar',
-        'nf',
-        'nw',
-        'fuelname',
-        'oxname',
-        'CEA']
-
-    params = dict.fromkeys(paramnames)
-
+    SIZINGCORRECTIONFACTOR = .9
     args = {
-        'thust' : 3000*const.lbToN, #Newtons
-        'time' : 50, #s
-        #'rho_ox' : 1141, #Kg/M^3
-        #'rho_fuel' : 842,
-        'pc' : 350 * const.psiToPa,
-        'pe' : 10.5 * const.psiToPa,
-        'phi' : 1,
-        'mdot' : 18,
-        'fuelname' : 'Ethanol_75',
-        'oxname' : 'LOX'}
+        'thrust': 3000 * const.lbToN,  # Newtons
+        'time': 50,  # s
+        # 'rho_ox' : 1141, #Kg/M^3
+        # 'rho_fuel' : 842,
+        'pc': 350 * const.psiToPa,
+        'pe': 14.7 * const.psiToPa,
+        'phi': 1.12,
+        'mdot': 18,
+        'fuelname': 'Ethanol_75',
+        'oxname': 'LOX',
+        'throat_radius_curvature': .02}
 
-    params['g'] = 9.81
-    params['pe'] = 14.7 * 6894.76
-
-    for arg in list(args):
-        if arg in paramnames:
-            params[arg] = args[arg]
-        else:
-            try:
-                print("Parameter " + arg + " isn't supported or is mispelled. Did you mean " +
-                      difflib.get_close_matches(arg, paramnames)[0] + "? That's what I'm going to use!")
-                params[difflib.get_close_matches(arg, paramnames)[0]] = args[arg]
-            except:
-                print("Parameter" + arg + "isn't supported or is mispelled")
-
-
-
-    if params['CEA'] is None: # need to have cea object to do other stuff sio make sure to get this done first
-        RA.makeEthanolBlend(int(regex.search(r'\d+', args['fuelname']).group()))
-
-        params['CEA'] = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], isp_units='sec', cstar_units='m/s',
-                                pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
-                                enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
-                                viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
-                                make_debug_prints=False)
-
-        if params['rm'] is None:
-            params['rm'] = rm(params)
-        if params['pc'] is None:
-            params['pc']  = pc(params)
-        if params['er'] is None:
-            params['er'] = er(params)
-
-        molandgam = params['CEA'].get_Chamber_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
-        params['mol_weight'] = molandgam[0][0]
-        params['gamma'] = molandgam[0][1]
-        molandgam = params['CEA'].get_exit_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
-        params['gamma_exit'] = molandgam[0][1]  # in exit
-        molandgam = params['CEA'].get_Throat_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
-        params['gamma_throat'] = molandgam[0][1]
-
-        #params['isp'],  # s
-        #params['temp_c',  # K, chamber temp
-        #params['rg',  # specific gas constant (SI units if what they are)
-        #params['pr_throat',
-        #params['rho_throat',
-        #params['temp_e',
-        #params['v_exit',
-        #params['a_exit',
-        #params['mach_exit',
-        ###params['temp_throat',
-        #params['p_throat',
-        #params['v_throat',
-
-    for param in list(params):
-        if params[param] is None:
-            try:
-                params[param] = globals()[param](params)
-            except:
-                print(param + " not yet supported")
-
+    params = FAC.SpreadsheetSolver(args)
     print(params)
+    print(params['er'])
+    dt=.05
+    L, hlist, vlist, thrustlist, isplist = RE.rocketEquationCEA(params, mi = None, thrust = params['thrust'], burntime = params['time'], L = None, H = 100000, dt=dt, Af=None, ispcorrection = SIZINGCORRECTIONFACTOR)
 
-def thrust(params):
-    try:
-        return params['impulse']/params['time']
-    except:
-        print('Could not calculate Thrust')
-        return None
-def time(params): #s
-    try:
-        return params['impulse']/params['thrust']
-    except:
-        print('Could not calculate time')
-        return None
-def impulse(params): #N*s
-    try:
-        return params['thrust']*params['time']
-    except:
-        print('Could not calculate impulse')
-        return None
-def rho_ox(params): #Kg/M^3 IMPLEMENT THIS USING FLUID PROPS
-    try:
-        pObj = get_prop(params['oxname'])
-        return 1000*pObj.SG_compressed(pObj.TdegRAtPsat(40),
-                                  params['pc'] / const.psiToPa)
-    except:
-        print("rocketProps busted lol")
-    return None
-def rho_fuel(params): #Kg/M^3MPLEMENT THIS USING FLUID PROPS
-    try:
-        pObj = get_prop(params['fuelname'])
-        return 1000 * pObj.SG_compressed(pObj.TdegRAtPsat(params['pc'] / const.psiToPa),
-                                         params['pc'] / const.psiToPa)
-    except AttributeError:
-        print('Fuel does not exist, assuming its a water ethanol blend')
-        ethpercent = int(regex.search(r'\d+', params['fuelname']).group())/100
-        pObj = get_prop("ethanol")
-        ethdens = 1000 * pObj.SG_compressed(293*const.degKtoR,
-                                         params['pc'] / const.psiToPa)
-        pObj = get_prop("water")
-        waterdens = 1000 * pObj.SG_compressed(293 * const.degKtoR,
-                                            params['pc'] / const.psiToPa)
-        return ethpercent*ethdens +(1-ethpercent)*waterdens
-    except:
-        print("rocketProps busted lol")
-    return None
-def pc(params): #Pa, calculate using throat conditions and backtrack
-    print('You should input PC, will set up calculator later, now its just 700 psi (4.82 mpa)')
-    return 700*6894.76
-def pe(params): #Pa, this hsould never be called
-    print('this should not be called this is a default value')
-    return 14.7
-def g(params): #m/s^2 his hsould never be called
-    print('this should not be called this is a default value')
-def rm(params): #o/f by weight
-    try:
-        return params['CEA'].getMRforER(ERphi=1)
-    except:
-        print('INSTALL ROCKETCEA IDIOT')
+    # Create a Figure with 2 rows and 2 columns of subplots:
+    fig, ax = plt.subplots(2, 2)
+    print(L)
+    x = np.linspace(0, 5, 100)
 
+    # Index 4 Axes arrays in 4 subplots within 1 Figure:
+    ax[0, 0].plot(np.arange(0, dt * hlist.size, dt), hlist, 'g')  # row=0, column=0
+    ax[1, 0].plot(np.arange(0, dt * hlist.size, dt), vlist, 'b')  # row=1, column=0
+    ax[0, 1].plot(np.arange(0,  params['time'], dt), thrustlist[0:np.size(np.arange(0, params['time'], dt))], 'r')  # row=0, column=1
+    ax[1, 1].plot(np.arange(0, params['time'], dt), isplist[0:np.size(np.arange(0, params['time'], dt))], 'k')  # row=1, column=1
 
-
-def phi(params): #ratio from stoich (1 is stoich, >1 is fuel rich)
-    temp = params['CEA'].get_eqratio(Pc=params.pc, MR=params.rm)
-    return temp[0]
-def at(params): # m^2, area of throat assume choked at throat
-    return IE.AreaForChokedFlow(params['CEA'],params['t_throat'],params['gamma_throat'],params['mdot'],
-                                IE.gasConstant()/['mol_weight'])
-"""
-def rt(params): # m, radius of throat
-def cr(params): # contraction ratio
-def rc(params): # m, combustion chamber radius
-def ac(params): # m^2, area combustion chamber
-def l_star(params): # m, volume cc/area throat
-def mol_weight(params): # kg/mol
-def gamma(params): # in cc
-def gamme_exit(params): # in exit
-def isp(params): # s
-def temp_c(params): # K, chamber temp
-def rg(params): # specific gas constant (SI units if what they are)
-def pr_throat(params):
-def rho_throat(params):
-def temp_e(params):
-def v_exit(params):
-def a_exit(params):
-def mach_exit(params):
-def temp_throat(params):
-def p_throat(params):
-def v_throat(params):
-def mdot(params):
-def mdot_ox(params):
-def mdot_fuel(params):
-"""
-def er(params):
-    eps = 1
-    temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=eps , Pamb=params['pe'], frozen=0, frozenAtThroat=0)
-    while int(regex.search(r'\d+',temp[1]).group())*const.psiToPa - round(params['pe']) > 100:
-        eps =eps +.1
-        temp = params['CEA'].estimate_Ambient_Isp(Pc=params['pc'], MR=params['rm'], eps=eps , Pamb=params['pe'], frozen=0,
-                                                  frozenAtThroat=0)
-    return eps
-"""
-def cstar(params):
-def cf(params):
-def c_eff(params):
-def rho_av(params):
-def vc(params):
-def theta_con(params):
-def lc(params):
-def theta_div(params):
-def ln_conical(params):
-def ln_bell(params):
-def ae(params):
-def re(params):
-def nv(params):
-def nvstar(params):
-def nf(params):
-def nw(params):
-def fuelname(params):
-def oxname(params):
-"""
+    ax[0,0].set_title('Height')
+    ax[1, 0].set_title('Velo (M/s)')
+    ax[0, 1].set_title('Thrust (Newtons)')
+    ax[1, 1].set_title('Isp (sec)')
+    plt.show()
 
 main()
+
+"""    
+    TransportCEA = params['CEA'].get_Chamber_Transport(Pc=params['pc'], MR=params['rm'], eps=params['er'],frozen=0)
+    print(TransportCEA)
+
+    #print(4*params['gamma_throat']/(9*params['gamma_throat']-5))
+    #Bartz(params['rt']*2,)
+
+
+def Bartz(D, viscosityns, prandtlns, cpns, pcns, cstar, throat_radius_curvature, at, a, twg, tcns, mach, gamma):
+    sigma = ((.5 * twg / tcns * (1 + (mach ** 2) * (gamma - 1) / 2) + .5) ** (-.68)) * (
+                1 + (mach ** 2) * (gamma - 1) / 2) ** (-.12)
+    return (.026 / (D ** .2) * (cpns * viscosityns ** .2) / (prandtlns ** .6) * (pcns / cstar) ** (.8) * (
+                D / throat_radius_curvature) ** .1) * (at / a) ** .9 * sigma
+main()
+"""

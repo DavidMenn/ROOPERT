@@ -16,14 +16,13 @@ def PFromMdotAtThroat(mdot, gam, totalT, at, R):
     totalP = mdot * (totalT ** .5) / at / ((gam / R) ** .5) * (((gam + 1) / 2) ** ((gam + 1) / (2 * (gam - 1))))
     return PFromTotalP(totalP, gam, 1)
 
-def gasConstant():
-    return 8.314
+
 
 def AreaForChokedFlow(p,T,gam,mdot,specificR):
     Tt=totalT(T,gam,1)
     pt=totalP(p,gam,1)
     return mdot * math.sqrt(Tt) / pt / math.sqrt(gam / specificR) / (
-                (1 + (gam - 1) / 2) ^ (-(gam + 1) / (2 * (gam - 1))))
+                (1 + (gam - 1) / 2) ** (-(gam + 1) / (2 * (gam - 1))))
 
 def RtoK(degR):
     return degR*5/9
