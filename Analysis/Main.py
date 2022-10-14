@@ -12,7 +12,7 @@ from rocketprops.rocket_prop import get_prop
 import Toolbox.Constant as const
 import matplotlib.pyplot as plt
 import FirstOrderCalcs as FAC
-
+import Components.StructuralApproximation as SA
 #xlist = np.linspace(0, .35, 1000)
 #rlist = RListGenerator.sharpRList(xlist, .2, .07, .24, .02, .35, .06) #xlist, xns, rc, xt, rt, xe, re
 #TC = ThrustChamber(rlist,xlist)
@@ -28,40 +28,54 @@ import FirstOrderCalcs as FAC
 def main():
     SIZINGCORRECTIONFACTOR = .9
     args = {
-        'thrust': 3000 * const.lbToN,  # Newtons
-        'time': 50,  # s
+        'thrust': 5000 * const.lbToN,  # Newtons
+        'time': 30,  # s
         # 'rho_ox' : 1141, #Kg/M^3
         # 'rho_fuel' : 842,
         'pc': 350 * const.psiToPa,
         'pe': 14.7 * const.psiToPa,
         'phi': 1.12,
-        'mdot': 18,
-        'fuelname': 'Ethanol_75',
+        'fuelname': 'Ethanol',
         'oxname': 'LOX',
         'throat_radius_curvature': .02}
 
     params = FAC.SpreadsheetSolver(args)
+    dp=150*const.psiToPa
+    miinit,lambdainit,totalmass = SA.mass_approx(params['pc'],dp, 12, params['rho_fuel'],params['rho_ox'], params['thrust'], params['isp'], params['time'], params['rm'])
+    """
+
+    thrusttoweight_approx = 10
+
+
+
+    params['thrust'] = totalmass*thrusttoweight_approx*9.81 #recompute with a resonable thrust
+    params = FAC.SpreadsheetSolver(params)
+    miinit, lambdainit, totalmass = SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
+                                                   params['thrust'], params['isp'], params['time'], params['rm'])
+    L, mi, hlist, vlist, thrustlist, isplist, machlist = RE.rocketEquationCEA_MassAprox(params, 150000*const.lbToN,4, H=100000, dp = dp,
+                                                                          dt=None, Af=None,
+                                                                          ispcorrection=.9)
+
+    title = f"Fuel = {params['fuelname']}, Thrust = {params['thrust']}, burntime = {params['time']}, " \
+            f"mi = {((1 / L) * params['mdot'] * params['time'] - params['mdot'] * params['time'])}, mp = {params['mdot'] * params['time']}, Mtotal = {(1 / L) * params['mdot'] * params['time']}"
+    RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=None)
+   """
+
     print(params)
     print(params['er'])
+    print(params['temp_throat'])
     dt=.05
-    L, hlist, vlist, thrustlist, isplist = RE.rocketEquationCEA(params, mi = None, thrust = params['thrust'], burntime = params['time'], L = None, H = 100000, dt=dt, Af=None, ispcorrection = SIZINGCORRECTIONFACTOR)
+    L, hlist, vlist, thrustlist, isplist, machlist = RE.rocketEquationCEA(params, mi = None, thrust = params['thrust'], burntime = params['time'], L = None, H = 100000, dt=dt, Af=None, ispcorrection = SIZINGCORRECTIONFACTOR)
 
     # Create a Figure with 2 rows and 2 columns of subplots:
-    fig, ax = plt.subplots(2, 2)
-    print(L)
-    x = np.linspace(0, 5, 100)
 
-    # Index 4 Axes arrays in 4 subplots within 1 Figure:
-    ax[0, 0].plot(np.arange(0, dt * hlist.size, dt), hlist, 'g')  # row=0, column=0
-    ax[1, 0].plot(np.arange(0, dt * hlist.size, dt), vlist, 'b')  # row=1, column=0
-    ax[0, 1].plot(np.arange(0,  params['time'], dt), thrustlist[0:np.size(np.arange(0, params['time'], dt))], 'r')  # row=0, column=1
-    ax[1, 1].plot(np.arange(0, params['time'], dt), isplist[0:np.size(np.arange(0, params['time'], dt))], 'k')  # row=1, column=1
+    print("mi = " + str((1 / L) * params['mdot']*params['time']-params['mdot']*params['time']))
+    print('mp = ' + str(params['mdot']*params['time']))
+    print("Mtotal = "+ str((1 / L) * params['mdot']*params['time']))
+    title = f"Fuel = {params['fuelname']}, Thrust = {params['thrust']}, burntime = {params['time']}, " \
+            f"mi = {((1 / L) * params['mdot']*params['time']-params['mdot']*params['time'])}, mp = {params['mdot']*params['time']}, Mtotal = {(1 / L) * params['mdot']*params['time']}"
 
-    ax[0,0].set_title('Height')
-    ax[1, 0].set_title('Velo (M/s)')
-    ax[0, 1].set_title('Thrust (Newtons)')
-    ax[1, 1].set_title('Isp (sec)')
-    plt.show()
+    RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=None)
 
 main()
 

@@ -86,7 +86,10 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
                 print("Parameter" + arg + "isn't supported or is mispelled")
 
     if params['CEA'] is None: # need to have cea object to do other stuff sio make sure to get this done first
-        RA.makeEthanolBlend(int(regex.search(r'\d+', args['fuelname']).group()))
+        try:
+            RA.makeEthanolBlend(int(regex.search(r'\d+', args['fuelname']).group()))
+        except:
+            print(args['fuelname'])
 
         params['CEA'] = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], isp_units='sec', cstar_units='m/s',
                                 pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
@@ -235,7 +238,7 @@ def ac(params): # m^2, area combustion chamber
 def l_star(params): # m, volume cc/area throat
     return 40*const.inToM # THIS IS KERALOX LSTAR FROM HUZEL AND HUANG PAGE 72 WE HSOULD DO MORE RESEARCH
 def mdot(params):
-    return params['thrust']/params['isp']*(const.gravity)
+    return params['thrust']/params['isp']/(const.gravity)
 def mdot_ox(params):
     return params['rm']*params['mdot']/(params['rm']+1)
 def mdot_fuel(params):
