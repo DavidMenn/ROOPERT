@@ -34,7 +34,7 @@ def main():
         # 'rho_fuel' : 842,
         'pc': 350 * const.psiToPa,
         'pe': 14.7 * const.psiToPa,
-        'phi': 1.12,
+        'phi': 1,
         'fuelname': 'Ethanol',
         'oxname': 'LOX',
         'throat_radius_curvature': .02}
@@ -42,24 +42,25 @@ def main():
     params = FAC.SpreadsheetSolver(args)
     dp=150*const.psiToPa
     miinit,lambdainit,totalmass = SA.mass_approx(params['pc'],dp, 12, params['rho_fuel'],params['rho_ox'], params['thrust'], params['isp'], params['time'], params['rm'])
-    """
 
+    print(params)
     thrusttoweight_approx = 10
 
-
+    dt=.25
 
     params['thrust'] = totalmass*thrusttoweight_approx*9.81 #recompute with a resonable thrust
     params = FAC.SpreadsheetSolver(params)
     miinit, lambdainit, totalmass = SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
                                                    params['thrust'], params['isp'], params['time'], params['rm'])
-    L, mi, hlist, vlist, thrustlist, isplist, machlist = RE.rocketEquationCEA_MassAprox(params, 150000*const.lbToN,4, H=100000, dp = dp,
-                                                                          dt=None, Af=None,
-                                                                          ispcorrection=.9)
-
+    L, mi, hlist, vlist, thrustlist, isplist, machlist = RE.rocketEquationCEA_MassAprox(params, 15000*const.lbToN,4, H=100000, dp = dp,
+                                                                          dt=dt, Af=None,
+                                                                          ispcorrection=.95)
+    SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
+                                                   params['thrust'], params['isp'], params['time'], params['rm'])
     title = f"Fuel = {params['fuelname']}, Thrust = {params['thrust']}, burntime = {params['time']}, " \
             f"mi = {((1 / L) * params['mdot'] * params['time'] - params['mdot'] * params['time'])}, mp = {params['mdot'] * params['time']}, Mtotal = {(1 / L) * params['mdot'] * params['time']}"
-    RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=None)
-   """
+    RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=dt)
+    """
 
     print(params)
     print(params['er'])
@@ -76,7 +77,7 @@ def main():
             f"mi = {((1 / L) * params['mdot']*params['time']-params['mdot']*params['time'])}, mp = {params['mdot']*params['time']}, Mtotal = {(1 / L) * params['mdot']*params['time']}"
 
     RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=None)
-
+    """
 main()
 
 """    

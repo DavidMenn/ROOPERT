@@ -323,15 +323,15 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
         params['thrust'] = totalmass * thrustToWeight * 9.81  # recompute with a resonable thrust
         params['time'] = impulse/params['thrust']
         print(f"MI is {mi} and Thrust is {params['thrust']}")
-    h=0
-    while h < H:
+    h=H-1
+    while h < H or h > H + 500:
 
         #if h < H:
         #    L = L + .005
         #else:
         #    L = L - .0005
         print(f"got to {h} at impulse {impulse} and mi = {mi}")
-        impulse = impulse + 25000
+        impulse = impulse*(H/h)
         miinittemp = 0
         while abs(miinittemp - mi) > 2:
             miinittemp = mi
@@ -340,7 +340,7 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
             mi, L, totalmass = SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
                                               params['thrust'], params['isp'], params['time'], params['rm'])
 
-            print(f"MI is {mi} and Thrust is {params['thrust']}")
+            print(f"MI is {mi}, L is {L} and Thrust is {params['thrust']}")
 
         expectedTime = int((params['time'] + 180) / dt)
         vlist = np.zeros(expectedTime)

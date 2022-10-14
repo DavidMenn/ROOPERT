@@ -181,7 +181,7 @@ def rho_ox(params): #Kg/M^3 IMPLEMENT THIS USING FLUID PROPS
 def rho_fuel(params): #Kg/M^3MPLEMENT THIS USING FLUID PROPS
     try:
         pObj = get_prop(params['fuelname'])
-        return 1000 * pObj.SG_compressed(pObj.TdegRAtPsat(params['pc'] / const.psiToPa),
+        return 1000 * pObj.SG_compressed(293*const.degKtoR,
                                          params['pc'] / const.psiToPa)
     except AttributeError:
         print('Fuel does not exist, assuming its a water ethanol blend')

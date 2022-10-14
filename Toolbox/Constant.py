@@ -5,5 +5,6 @@ degRTtoK = 5/9
 degKtoR = 9/5
 psiToPa = 6894.76
 lbToN = 4.448218
+lbToKg = lbToN/9.81
 R = 8.314 #specific gas constant universal
 inToM = 0.0254
