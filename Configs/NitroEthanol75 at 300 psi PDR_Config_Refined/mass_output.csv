@@ -1,0 +1,99 @@
+This is supposed to be a CSV! Eventually it should be passed params and get all that data too!,,,
+Variable,Value,Units,Description
+vol_ox,0.16831223,M^3,ox volume
+vol_fuel,0.066646317,m^3,fuel volme
+P_pres,31026420,Pa,Pressure in helium tank
+P_tank_fuel,3102642,Pa,Pressure in fuel tank
+P_tank_ox,3102642,Pa,Pressure in ox tank
+vol_pres,0.026106505,m^3,volume pressurant
+t_prop: ox tank,0.003924005,m,thickness of ox tank walls
+weight_fueltank,22.84844555,kg,mass of fuel  tank
+weight_oxtank,37.6582358,kg,
+heightrocket,7.029838777,m,rocket height guess
+heightfuel,0.962307335,m,fuel tank height guess
+heightox,2.430263221,m,ox tank height guess
+thrust chamber weight,30.87336453,kg,
+avbay weight,13.19340374,kg,
+foxhole weight,6.75909573,kg,
+massNoseCone,5.364160952,kg,
+massFins,4,kg,
+massRecovery,10,kg,
+massRecoveryCoupler,3.62749684,kg,
+massPayloadCoupler,2.49,kg,
+massAirFrames,21.79661909,kg,
+massPayload,2.5,kg,
+Structures weight,49.77827689,kg,sum of past 7 masses
+inert mass,215.9841938,kg,dry mass
+fuelmass,56.21105426,kg,
+oxmass,198.1132274,kg,
+lambda (massfrac),0.540760575,,
+totalmass,470.3084754,kg,
+thrust,18450.76668,N,
+time,29.06621847,s,
+impulse,536294.0152,Ns,
+rho_ox,1177.057825,kh/m3,
+rho_fuel,843.4232622,kg/m3,
+pc,2068428,pa,Pressure at start of nozzle
+pinj,2094856.204,pa,Pressure at injector face
+pe,101352.972,pa,Pressure at exit
+g,9.81,,
+rm,3.524453152,,Ox mdot/ Fuel mdot
+phi,1.069046734,,Deviation from stoichiometric (1.06 is slightly fuel rich)
+at,0.006576569,m^2,throat area
+rt,0.045753545,m,throat radius
+cr,5.780085372,,convering area ratio
+rc,0.109999794,m,chamber radius
+ac,0.038013129,m^2,chamber area
+l_star,1.016,m,
+mol_weight,24.23994847,,
+gamma,1.144928208,,
+gamma_exit,1.224170776,,
+gamma_throat,1.149024342,,
+isp,214.9542898,s,
+temp_c,2908.710924,K,
+rg, (0.34298752777566804,,
+pr_throat,0.526565507,,
+rho_throat,1.269716574,kg/m^3,
+temp_e,1900.383271,K,
+v_exit,2217.182061,m/s,
+a_exit,882.2651525,m/s,
+mach_exit,2.513056369,mach,
+temp_throat,2734.937263,K,
+p_throat,3622555.376,Pa,
+v_throat,1033.812918,m/s,
+mdot,8.749823507,kg/s,
+mdot_ox,6.815927141,kg/s,
+mdot_fuel,1.933896366,kg/s,
+er,3.714248484,,
+cstar,1487.888428,m/s,
+cf,1.356358966,,
+c_eff, NONE,,
+rho_av, NONE,,
+vc, NONE,,
+theta_con, NONE,,
+lc,0.160922575,,
+theta_div, NONE,,
+ln_conical,0.163915492,,
+ln_bell, NONE,,
+throat_radius_curvature,0.0508,m,
+ae,0.024427011,m2,
+re,0.088177996,m,
+nv, NONE,,
+nvstar, NONE,,
+nf, NONE,,
+nw, NONE,,
+fuelname, Ethanol_75,,
+oxname, N2O,,
+CEA, <rocketcea.cea_obj_w_units.CEA_Obj object at 0x7f23e261f6d0>,,
+pambient,101352.972,pa,
+cf_efficiency,0.95,,
+isp_efficiency,0.95,,
+thetac, NONE,,
+thetai, NONE,,
+thetae, NONE,,
+lstar,1.24,m,
+dp, [1034214.0,,
+prns,0.498232881,,
+viscosityns,9.82E-07,,
+cpns,3909.814069,,
+Deltav,1296.390935,,

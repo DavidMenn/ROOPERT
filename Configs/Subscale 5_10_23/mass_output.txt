@@ -1,0 +1,107 @@
+This is supposed to be a CSV! Eventually it should be passed params and get all that data too!
+vol_ox, 0.013355423118182856
+vol_fuel, 0.005288324951118636
+P_pres, 31026420.0
+P_tank_fuel, 3102642.0
+P_tank_ox, 3102642.0
+vol_pres, 0.0020715275632557212
+t_prop: ox tank, 0.003924005317842323
+weight_fueltank, 20.711912942783165
+weight_oxtank, 21.88705639568917
+heightrocket, 3.5342882414412164
+heightfuel, 0.07635821611201568
+heightox, 0.1928391871059096
+thrust chamber weight, 30.833723139653415
+avbay weight, 24.25888511722732
+foxhole weight, 0
+massNoseCone, 6.801556574923547
+massFins, 18.137484199796127
+massRecovery, 18.590921304791028
+massRecoveryCoupler, 3.627496839959225
+massPayloadCoupler, 3.627496839959225
+massAirFrames, 15.87029867482161
+massPayload, 3
+massAvionics, 4.534371049949032
+Structures weight, 110
+inert mass, 256.30149187008476
+fuelmass, 4.460296282001017
+oxmass, 15.720105289678987
+lambda (massfrac), 0.07298995721009337
+totalmass, 276.4818934417648
+thrust, 5337.8616
+time, 7.5
+impulse, 40033.962
+rho_ox, 1177.0578251674194
+rho_fuel, 843.4232622292875
+pc, 2068428.0
+pinj, 2076369.5479662018
+pe, 68947.6
+g, 9.81
+rm, 3.524453151938709
+phi, 1.069046734357722
+at, 0.0019146948353985316
+rt, 0.02468737116690229
+cr, 10.50099098271316
+rc, 0.0800000004340807
+ac, 0.020106193201167438
+l_star, 1.016
+mol_weight, 24.23879015412531
+gamma, 1.1449398991608812
+gamma_exit, 1.2303302229692188
+gamma_throat, 1.149060715745583
+isp, 202.22263320473624
+temp_c, 2910.3636055126312
+rg, (0.34300391839421085,)
+pr_throat, 0.5267001759539593
+rho_throat, 1.2750294824458566
+temp_e, 1768.2503051173226
+v_exit, 2322.49569422082
+a_exit, 853.127644354974
+mach_exit, 2.7223308371126507
+temp_throat, 2735.1410091194116
+p_throat, 3607262.3962597745
+v_throat, 1033.8576810523646
+mdot, 2.690720209557334
+mdot_ox, 2.096014038623865
+mdot_fuel, 0.5947061709334689
+er, 4.869881608656112
+cstar, 1409.6133299974251
+cf, 1.34780584443721
+c_eff, NONE
+rho_av, NONE
+vc, NONE
+theta_con, NONE
+lc, 0.12557474233380458
+theta_div, NONE
+ln_conical, 0.11510839987398842
+ln_bell, NONE
+throat_radius_curvature, 0.0508
+ae, 0.00932433716509615
+re, 0.054479617305567093
+nv, NONE
+nvstar, NONE
+nf, NONE
+nw, NONE
+fuelname, Ethanol_75
+oxname, N2O
+CEA, <rocketcea.cea_obj_w_units.CEA_Obj object at 0x7f8d8eff0ee0>
+pambient, 101352.972
+cf_efficiency, 0.95
+isp_efficiency, 0.9
+thetac, NONE
+thetai, NONE
+thetae, NONE
+kin_visc_fuel, 1.3639349612276431e-06
+kin_visc_ox, 5.4758906383056096e-08
+dyn_visc_fuel, 0.0011503744744671956
+dyn_visc_ox, 6.445439925578633e-05
+P_tank_ox, NONE
+P_tank_fuel, NONE
+numengines, NONE
+propmass, 20.180401571680004
+lstar, 1.24
+dp, 1034214.0
+prns, 0.4981595674320055
+viscosityns, 9.824544141642015e-07
+cpns, 3910.6441698886365
+Deltav, -13209.732961632559

@@ -26,19 +26,27 @@ def optimalMr(args, plot = False):
         RA.makeEthanolBlend(int(regex.search(r'\d+', args['fuelname']).group()))
     except:
         print(args['fuelname'])
-    if args['cr'] is None:
+    try: #maybe there is a kyename error
+        if args['cr'] is None:
+            CEA = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], useFastLookup=1, isp_units='sec',
+                                    cstar_units='m/s',
+                                    pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
+                                    enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
+                                    viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
+                                    make_debug_prints=False)
+        else:
+            CEA = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], useFastLookup=1, isp_units='sec',
+                                    cstar_units='m/s',
+                                    pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
+                                    enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
+                                    viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=args['cr'],
+                                    make_debug_prints=False)
+    except KeyError:
         CEA = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], useFastLookup=1, isp_units='sec',
                                 cstar_units='m/s',
                                 pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
                                 enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
                                 viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
-                                make_debug_prints=False)
-    else:
-        CEA = CEA_Obj(oxName=args['oxname'], fuelName=args['fuelname'], useFastLookup=1, isp_units='sec',
-                                cstar_units='m/s',
-                                pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
-                                enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
-                                viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=args['cr'],
                                 make_debug_prints=False)
     philist = np.arange(.5,4,.01)
     mrlist = np.zeros( philist.size)
@@ -100,13 +108,3 @@ def optimalMr(args, plot = False):
         axs[0].set_ylim([150, ispavglist.max()+30])
 
     return ispmaxavg, mrideal, phiideal, ispmaxeq, ispmaxfrozen
-"""
-args = {
-
-    'pc': 350 * const.psiToPa,
-    'cr' : 4,
-    'fuelname': 'Ethanol',
-    'oxname': 'LOX'}
-ispmaxavg, mrideal, phiideal, ispmaxeq, ispmaxfrozen = optimalMr(args)
-print(f"isp max = {ispmaxavg}, ideal mr is {mrideal}")
-"""

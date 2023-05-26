@@ -22,6 +22,64 @@ from scipy import interpolate
 import Toolbox.IsentropicEquations as Ise
 import matplotlib.pyplot as plt
 
+class StructuralAnalysis(object): #This object should be used to calculate stersses and factors of safety given geometry and temperatures
+
+    def __init__(self, rlist, xlist, nlist, chlist, cwlist, twlist, material): #Initializes geometry and useful values for rectangular changels
+        self.rlist = rlist
+        self.xlist = xlist
+        self.nlist = nlist
+        self.chlist = chlist
+        self.cwlist=cwlist    
+        self.cwlist=cwlist    
+        self.twlist=twlist
+
+        self.rclist = np.zeros(rlist.size) #Radius of curvature is defined such that a negative readius of curvature is convex, positive is concave (like the throat)
+        ind = 1
+        dr2dx2 = (rlist[ind+1]-2*rlist[ind]+rlist[ind-1])/(((xlist[ind-1]-xlist[ind+1])/2)**2)
+        if dr2dx2 == 0:
+            self.rclist[ind]=0
+        else:
+            drdx = ((rlist[ind]-rlist[ind-1])/(xlist[ind]-xlist[ind-1])+(rlist[ind]-rlist[ind-+1])/(xlist[ind]-xlist[ind+1]))/2
+            self.rclist[ind]=((1+drdx**2)**(3/2))/(dr2dx2)
+        self.rclist[0]=self.rclist[1]
+        while ind<xlist.size-1:
+            dr2dx2 = (rlist[ind+1]-2*rlist[ind]+rlist[ind-1])/(((xlist[ind-1]-xlist[ind+1])/2)**2)
+            if dr2dx2 == 0:
+                self.rclist[ind]=0
+            else:
+                drdx = ((rlist[ind]-rlist[ind-1])/(xlist[ind]-xlist[ind-1])+(rlist[ind]-rlist[ind-+1])/(xlist[ind]-xlist[ind+1]))/2
+                self.rclist[ind]=((1+drdx**2)**(3/2))/(dr2dx2)
+            ind=ind+1
+        self.rclist[-1]=self.rclist[-2]
+
+        #CURRENTLY HAVE THIS AS FIXED, NEED TO BE ABLE TO CHANGE THIS WITH PRELOADED MATPROPS
+        self.EInterpolator = interpolate.interp1d(((np.hstack((70,np.arange(100, 2001, 100), np.array([10000])))-32)*5/9)+273.15,
+                                              np.array([29,28.8,28.4,28,27.6,27.1,26.7,26.3,25.8,25.3,24.8,24.2,23.7,23.0,22.3,21.3,20.2,18.8,17.4,15.9,14.3,0])*(10**6)*const.psiToPa, kind='linear') #https://www.engineersedge.com/materials/inconel_718_modulus_of_elasticity_table_13562.htm
+        self.PoissonInterpolator = interpolate.interp1d(((np.hstack((70,np.arange(100, 2001, 100), np.array([10000])))-32)*5/9)+273.15,
+                                              np.array([.294,.291,.288,.280,.275,.272,.273,.271,.272,.271,.276,.283,.292,.306,.321,.331,.334,.341,.366,.402,.402,.402]), kind='linear') #https://www.engineersedge.com/materials/inconel_718_modulus_of_elasticity_table_13562.htm
+        #self.SyInterpolator = interpolate.interp1d(np.array([25,425,650,870,871,950,10000]),
+        #                                      np.array([1200,1050,1000,300,290,100,1])*10**6, kind='linear') # pg 734 metal additive manufacturing, inconel 718
+        self.SyInterpolator = interpolate.interp1d(np.array([25,425,650,870,871,10000])+273,
+                                              np.array([1200,1050,1000,300,10,1])*10**6, kind='linear') # pg 734 metal additive manufacturing, inconel 718
+        
+        self.AlphaInterpolator = interpolate.interp1d(np.hstack((np.arange(0, 1001, 100), np.array([10000])))+273,
+                                              np.array([12.6,12.6, 13.9, 14.2, 14.5, 14.8, 15.1, 15.6, 16.4, 17.5, 17.8,17.8])*10**(-6), kind='linear') # pg 781 metal additive manufacturing, inconel 718
+
+    def FOS(self, Twglist, Twclist, coolantpressurelist, preslist): #Calculates stresses using just sigma_tangential from heister page 207
+        dplist = coolantpressurelist-preslist
+        avgtemplist = (Twglist+Twclist)/2
+        deltaTlist = Twglist-Twclist
+        Elist = self.EInterpolator(avgtemplist)
+        poissonlist = self.PoissonInterpolator(avgtemplist)
+        Sylist = self.SyInterpolator(avgtemplist)
+        Alphalist = self.AlphaInterpolator(avgtemplist)
+        FUDGEFACTORFORTHERMALSTRESS = 1#.02 #pretty much disregarding it rn lol
+        sigmatangentiallist = dplist/2*((self.cwlist/self.twlist)**2)   +  FUDGEFACTORFORTHERMALSTRESS*Elist*Alphalist*deltaTlist/(2*(1-poissonlist))
+        return Sylist/sigmatangentiallist
+
+
+    
+
 
 def coaxialShellSetup(thrustchamber, params, rlist, tw, chanelthickness, helicity, dt, vlist=None, alist=None):
     if vlist is None:
@@ -78,18 +136,21 @@ def coaxialShellSetup(thrustchamber, params, rlist, tw, chanelthickness, helicit
 
     return alistflipped, n, coolingfactorlist, heatingfactorlist, xlistflipped, vlistflipped, twlistflipped, hydraulicdiamlist, salistflipped
 
-def finApproximation(geometry):
 
-    return coolingfactorlist
-# def brazedTubingSetup():
-#    return alist, n, coolingfactorlist, heatingfactorlist, xlist, dxlist, tlist
 
-# def milledChanelSetup():
-#    return alist, n, coolingfactorlist, heatingfactorlist, xlist, dxlist
-
-def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, numchanels, coolingfactorlist,
+def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, nlist, coolingfactorlist,
                             heatingfactorlist, xlist, vlist, initialcoolanttemp, initialcoolantpressure, twlist,
-                            hydraulicdiamlist):
+                            hydraulicdiamlist, rgaslist = None, fincoolingfactorfunc = None, dxlist = None, helicitylist = None):
+    if fincoolingfactorfunc is None: # This is so old code with coaxial shell still runs, ideally you use Qdot so you can use thermal resistances!
+        useqdot=True
+        if type(nlist) is int:
+            nlist = nlist*np.ones(xlist.size)
+    else:
+        useqdot=False #this is new!
+
+    if helicitylist is None:
+        helicitylist = np.ones(np.size(xlist))*math.pi/2
+
     if not (get_prop(params['fuelname']) is None):
         pObj = get_prop(params['fuelname'])
         ethpercent = None
@@ -107,8 +168,8 @@ def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, numchan
         wallmaterialprops = json.load(wallmaterial)
     except:
         print("either you didn't call this with a mat name or its not set up yet")
-        kwInterpolator = interpolate.interp1d(np.hstack((25,np.arange(100, 1001, 100) + 273.5, np.array([10000]))),
-                                              np.array([12.9, 13.9, 16.1, 18.2, 20, 22.1, 24.7, 31.4, 30.1, 31.5, 36.7,
+        kwInterpolator = interpolate.interp1d(np.hstack((-1000,25,np.arange(100, 1001, 100) + 273.5, np.array([10000]))),
+                                              np.array([0,12.9, 13.9, 16.1, 18.2, 20, 22.1, 24.7, 31.4, 30.1, 31.5, 36.7,
                                                         36.7]), kind='linear')
         matprops = {'kw': kwInterpolator}  # copper = 398, mild steel = 51??
 
@@ -126,7 +187,12 @@ def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, numchan
         'pObj': pObj,
         'pObjWater': pObjWater,
         'ethpercent': ethpercent,
-        'roughness' : 32*10**-6
+        'roughness' : 320*10**-6,
+        'nlist' : nlist,
+        'helicitylist' : helicitylist,
+        'coatingthickness' : .0005,
+        'kcoating' : 10.1,
+        'hcoating': 14470
     }
 
     Trlist = np.zeros(xlist.size)
@@ -141,14 +207,18 @@ def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, numchan
     Twglist = np.zeros(xlist.size)
     hglist = np.zeros(xlist.size)
     qdotlist = np.zeros(xlist.size)
+    if not useqdot:
+        Qdotlist = np.zeros(xlist.size)
+        fincoolingfactorlist = np.zeros(xlist.size)
     Twclist = np.zeros(xlist.size)
     hclist = np.zeros(xlist.size)
     Tclist = np.zeros(xlist.size)
     rholist = np.zeros(xlist.size)
     viscositylist = np.zeros(xlist.size)
     Relist = np.zeros(xlist.size)
-    """
+    
     # THIS IS JUST TO output CF plot
+    """
     cfindex=0
     velocitieslist = np.arange(.5,100,.1)
     cflist= np.zeros(velocitieslist.size)
@@ -168,60 +238,406 @@ def steadyStateTemperatures(wallmaterial, thrustchamber, params, salist, numchan
     plt.grid(True)
     plt.show()
     """
-    for ind in np.arange(0, xlist.size):
-        Tclist[ind] = Tc  # set cooland at current station to coolant temp
-        if ind == 0:
-            coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                                       staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
-                                      xlist[ind] - xlist[ind + 1]) / \
-                              hydraulicdiamlist[ind] * (
-                                          .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
-        else:
-            coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                                       staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
-                                      xlist[ind - 1] - xlist[ind]) / \
-                              hydraulicdiamlist[ind] * (
-                                      .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+    if useqdot: # THIS SHOULD NEVER BE USED!! OLD VERSION
+        for ind in np.arange(0, xlist.size):
+            Tclist[ind] = Tc  # set cooland at current station to coolant temp
+            if ind == 0:
+                coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                        staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                        xlist[ind] - xlist[ind + 1]) / \
+                                hydraulicdiamlist[ind] * (
+                                            .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+            else:
+                coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                        staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                        xlist[ind - 1] - xlist[ind]) / \
+                                hydraulicdiamlist[ind] * (
+                                        .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
 
 
-        coolantpressurelist[ind] = coolantpressure
-        x = xlist[ind]
-        print(x)
-        Tri = Trlist[ind]
-        gassidearea = thrustchamber.areaInterpolator(x)
+            coolantpressurelist[ind] = coolantpressure
+            x = xlist[ind]
+            if ind%50 == 0:
+                print(x)
+            Tri = Trlist[ind]
+            gassidearea = thrustchamber.areaInterpolator(x)
 
-        Twglist[ind] = qdotdiffMinimizer(staticnozzleparameters, gassidearea, thrustchamber.machInterpolator(x),
-                                         params['gamma'],
-                                         Tri, Tc, twlist[ind], coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                         coolingfactorlist[ind],heatingfactorlist[ind])
-        hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
-                            staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
-                            staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
-                            staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
-                            gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
-                            thrustchamber.machInterpolator(x), params['gamma'])
-        qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
-        # This works since its the same method used in qdotdiff function, its just a one iteration approx
-        Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind])) / twlist[ind])
-        Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind]+Twclist[ind])/2) / twlist[ind])
-        hclist[ind] = hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                         staticnozzleparameters['pObj'], staticnozzleparameters['pObjWater'],
-                         staticnozzleparameters['ethpercent'], coolingfactorlist[ind])
-        Tc = Tc + qdotlist[ind] * salist[ind] / (params['mdot_fuel'] * heatCapacity(Tc, staticnozzleparameters))
-        rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
-        viscositylist[ind]= viscosity(Tc,coolantpressure,  staticnozzleparameters['pObj'],staticnozzleparameters['pObjWater'],staticnozzleparameters['ethpercent'])
-        Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
-                                       staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
-
-    return Twglist, hglist, qdotlist, Twclist, hclist, Tclist, \
+            Twglist[ind] = qdotdiffMinimizer(staticnozzleparameters, gassidearea, thrustchamber.machInterpolator(x),
+                                            params['gamma'],
+                                            Tri, Tc, twlist[ind], coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                            coolingfactorlist[ind],heatingfactorlist[ind])
+            hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
+                                staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
+                                staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
+                                staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
+                                gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
+                                thrustchamber.machInterpolator(x), params['gamma'])
+            qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
+            # This works since its the same method used in qdotdiff function, its just a one iteration approx
+            Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind])) / twlist[ind])
+            Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind]+Twclist[ind])/2) / twlist[ind])
+            hclist[ind] = hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                            staticnozzleparameters['pObj'], staticnozzleparameters['pObjWater'],
+                            staticnozzleparameters['ethpercent'], coolingfactorlist[ind])
+            Tc = Tc + qdotlist[ind] * salist[ind] / (params['mdot_fuel']/nlist[ind] * heatCapacity(Tc, staticnozzleparameters))
+            rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
+            viscositylist[ind]= viscosity(Tc,coolantpressure,  staticnozzleparameters['pObj'],staticnozzleparameters['pObjWater'],staticnozzleparameters['ethpercent'])
+            Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
+                                        staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
+        return Twglist, hglist, qdotlist, Twclist, hclist, Tclist, \
            coolantpressurelist, qdotlist, Trlist, rholist, viscositylist, Relist
+    else:
+        for ind in np.arange(0, xlist.size):
+            Tclist[ind] = Tc  # set cooland at current station to coolant temp
+            dx = 0
+            if ind == 0:
+                dx = xlist[ind] - xlist[ind + 1]
+                coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                        staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                        dx) / \
+                                hydraulicdiamlist[ind] * (
+                                            .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+            else:
+                dx = xlist[ind - 1] - xlist[ind]
+                coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                        staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                        dx) / \
+                                hydraulicdiamlist[ind] * (
+                                        .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+
+
+            coolantpressurelist[ind] = coolantpressure
+            x = xlist[ind]
+            if ind%10 == 0:
+                print(x)
+            Tri = Trlist[ind]
+            gassidearea = thrustchamber.areaInterpolator(x)
+            try:
+                if ind == 0:
+                    if abs(rgaslist[ind]-params['re'])>abs(rgaslist[-1]-params['re']):
+                        rgaslist=np.flip(rgaslist) #you didnt do your list the right way idiot
+            except:
+                pass #no params['re']
+            rgas = rgaslist[ind]
+            fincoolingfactorfunc_atstation = lambda hc, kw : fincoolingfactorfunc(hc,kw,ind)
+
+            Twglist[ind] = QdotdiffMinimizer(staticnozzleparameters, gassidearea, thrustchamber.machInterpolator(x),
+                                            params['gamma'],
+                                            Tri, Tc, twlist[ind], coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                            coolingfactorlist[ind],heatingfactorlist[ind], rgas, nlist[ind], fincoolingfactorfunc_atstation,
+                                            helicity = staticnozzleparameters['helicitylist'][ind])
+            hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
+                                staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
+                                staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
+                                staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
+                                gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
+                                thrustchamber.machInterpolator(x), params['gamma'])
+            Qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])*2*math.pi*rgas/nlist[ind]
+            qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
+            # This works since its the same method used in qdotdiff function, its just a one iteration approx
+            Twclist[ind] = Twglist[ind] - Qdotlist[ind]/(2*math.pi*rgas/nlist[ind]) / (matprops['kw']((Twglist[ind])) / twlist[ind])
+            Twclist[ind] = Twglist[ind] - Qdotlist[ind]/(2*math.pi*rgas/nlist[ind]) / (matprops['kw']((Twglist[ind]+Twclist[ind])/2) / twlist[ind])
+            hclist[ind] = hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                            staticnozzleparameters['pObj'], staticnozzleparameters['pObjWater'],
+                            staticnozzleparameters['ethpercent'], coolingfactorlist[ind])
+            fincoolingfactorlist[ind] = dx*fincoolingfactorfunc_atstation(hclist[ind],(matprops['kw']((Twglist[ind]+Twclist[ind])/2)))\
+                                        /math.sin(staticnozzleparameters['helicitylist'][ind])/(gassidearea/nlist[ind])
+            #This is the ratio of corrected coolant side area over gas side area servicied by coolant passage
+            #This would be (2*ch*finefficiency + cw)*(dx/sin(helicity)) / (gassidearea/numchanels)
+            Tc = Tc + Qdotlist[ind] * dxlist[ind] / (params['mdot_fuel']/nlist[ind] * heatCapacity(Tc, staticnozzleparameters))
+            rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
+            viscositylist[ind]= viscosity(Tc,coolantpressure,  staticnozzleparameters['pObj'],staticnozzleparameters['pObjWater'],staticnozzleparameters['ethpercent'])
+            Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
+                                        staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
+            
+        return Twglist, hglist, Qdotlist, Twclist, hclist, Tclist, \
+           coolantpressurelist, qdotlist, fincoolingfactorlist, rholist, viscositylist, Trlist # lol this is bandaid should be Relist
 
 def ablative():
     return "set this up"
 
 
-def transientTemperature(wall, steadystatestuff):
-    "solve steady state with twg set to room temp at first with some time step"
+def transientTemperature(wallmaterial, thrustchamber, params, salist, nlist, coolingfactorlist,
+                            heatingfactorlist, xlist, vlist, initialcoolanttemp, initialcoolantpressure, twlist,
+                            hydraulicdiamlist, rgaslist = None, fincoolingfactorfunc = None, dxlist = None, helicitylist = None):
+    if fincoolingfactorfunc is None: # This is so old code with coaxial shell still runs, ideally you use Qdot so you can use thermal resistances!
+        useqdot=True
+        if type(nlist) is int:
+            nlist = nlist*np.ones(xlist.size)
+    else:
+        useqdot=False #this is new!
+
+    if helicitylist is None:
+        helicitylist = np.ones(np.size(xlist))*math.pi/2
+
+    if not (get_prop(params['fuelname']) is None):
+        pObj = get_prop(params['fuelname'])
+        ethpercent = None
+        pObjWater = None
+    else:
+        try:
+            print('Fuel does not exist, assuming its a water ethanol blend')
+            ethpercent = int(regex.search(r'\d+', params['fuelname']).group()) / 100
+            pObj = get_prop("ethanol")
+            pObjWater = get_prop("water")
+        except:
+            print("rocketProps busted lol")
+
+    try:
+        wallmaterialprops = json.load(wallmaterial)
+    except:
+        print("either you didn't call this with a mat name or its not set up yet")
+        kwInterpolator = interpolate.interp1d(np.hstack((-1000,25,np.arange(100, 1001, 100) + 273.5, np.array([10000]))),
+                                              np.array([0,12.9, 13.9, 16.1, 18.2, 20, 22.1, 24.7, 31.4, 30.1, 31.5, 36.7,
+                                                        36.7]), kind='linear')
+        matprops = {'kw': kwInterpolator}  # copper = 398, mild steel = 51??
+        matprops['rho'] = 8220 #kg/m3 for inconcel 718
+
+        cpInterpolator = interpolate.interp1d(np.hstack((25,np.arange(100, 1001, 100) + 273.5, np.array([10000]))),
+                                             1000* np.array([.537,.543,.577,.596,.608,.628,.665,.722,.756,.785,.874,.874]), kind='linear')
+        matprops['cp'] = cpInterpolator
+
+    staticnozzleparameters = {
+        'throatdiameter': thrustchamber.rt * 2,
+        'prandtlns': params['prns'],
+        'viscosityns': params['viscosityns'],
+        'cpns': params['cpns'],
+        'pcns': params['pc'],
+        'cstar': params['cstar'],
+        'throatRadiusCurvature': params["throat_radius_curvature"],
+        'at': thrustchamber.at,
+        'tcns': params['temp_c'],
+        'kw': matprops['kw'],
+        'pObj': pObj,
+        'pObjWater': pObjWater,
+        'ethpercent': ethpercent,
+        'roughness' : 320*10**-6,
+        'nlist' : nlist,
+        'helicitylist' : helicitylist,
+        'coatingthickness' : .0005,
+        'kcoating' : 10.1,
+        'hcoating': 144700,
+        'rho': matprops['rho'],
+        'cp' : cpInterpolator
+    }
+
+    Vollist = 2*math.pi*rgaslist/nlist*dxlist*twlist #volume of the metal that is heating up per chanel
+
+
+    Trlist = np.zeros(xlist.size)
+    for ind in np.arange(0, xlist.size):
+        x = xlist[ind]
+        Trlist[ind] = recoveryTemp(thrustchamber.tempInterpolator(xlist[ind]), params['gamma'],
+                                   thrustchamber.machInterpolator(xlist[ind]), Pr=params['pr_throat'])
+
+    Tc = initialcoolanttemp
+    coolantpressure = initialcoolantpressure
+    coolantpressurelist = np.zeros(xlist.size)
+    Twglist = np.ones(xlist.size)*initialcoolanttemp #initializing the gas side wall temp at room temp
+    hglist = np.zeros(xlist.size)
+    qdotlist = np.zeros(xlist.size)
+    if not useqdot:
+        Qdotlist = np.zeros(xlist.size)
+        fincoolingfactorlist = np.zeros(xlist.size)
+    Twclist = np.ones(xlist.size)*initialcoolanttemp #initializing the coolant side wall temp at room temp
+    hclist = np.zeros(xlist.size)
+    Tclist = np.zeros(xlist.size)
+    rholist = np.zeros(xlist.size)
+    viscositylist = np.zeros(xlist.size)
+    Relist = np.zeros(xlist.size)
+    
+    maxtime = 100# seconds Max time
+    time = 0
+    dt=.1
+
+    twgprevious = -100 
+    error_in_steadystate = .1 #measured in change in degrees/second
+
+    while abs(Twglist[round(xlist.size/2)]-twgprevious)/dt > error_in_steadystate and time < maxtime:
+        twgprevious = Twglist[round(xlist.size/2)]#pick a random index to check if it gets to steady state
+
+    
+
+    
+
+        if useqdot: # THIS SHOULD NEVER BE USED!! OLD VERSION
+            for ind in np.arange(0, xlist.size):
+                Tclist[ind] = Tc  # set cooland at current station to coolant temp
+                if ind == 0:
+                    coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                            staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                            xlist[ind] - xlist[ind + 1]) / \
+                                    hydraulicdiamlist[ind] * (
+                                                .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+                else:
+                    coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                            staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                            xlist[ind - 1] - xlist[ind]) / \
+                                    hydraulicdiamlist[ind] * (
+                                            .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+
+
+                coolantpressurelist[ind] = coolantpressure
+                x = xlist[ind]
+                if ind%50 == 0:
+                    print(x)
+                Tri = Trlist[ind]
+                gassidearea = thrustchamber.areaInterpolator(x)
+
+                Twglist[ind] = qdotdiffMinimizer(staticnozzleparameters, gassidearea, thrustchamber.machInterpolator(x),
+                                                params['gamma'],
+                                                Tri, Tc, twlist[ind], coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                coolingfactorlist[ind],heatingfactorlist[ind])
+                hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
+                                    staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
+                                    staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
+                                    staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
+                                    gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
+                                    thrustchamber.machInterpolator(x), params['gamma'])
+                qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
+                # This works since its the same method used in qdotdiff function, its just a one iteration approx
+                Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind])) / twlist[ind])
+                Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind]+Twclist[ind])/2) / twlist[ind])
+                hclist[ind] = hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                staticnozzleparameters['pObj'], staticnozzleparameters['pObjWater'],
+                                staticnozzleparameters['ethpercent'], coolingfactorlist[ind])
+                Tc = Tc + qdotlist[ind] * salist[ind] / (params['mdot_fuel']/nlist[ind] * heatCapacity(Tc, staticnozzleparameters))
+                rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
+                viscositylist[ind]= viscosity(Tc,coolantpressure,  staticnozzleparameters['pObj'],staticnozzleparameters['pObjWater'],staticnozzleparameters['ethpercent'])
+                Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
+                                            staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
+            return Twglist, hglist, qdotlist, Twclist, hclist, Tclist, \
+            coolantpressurelist, qdotlist, Trlist, rholist, viscositylist, Relist
+        else:
+
+            for ind in np.arange(0, xlist.size):
+                Tclist[ind] = Tc  # set cooland at current station to coolant temp
+                dx = 0
+                if ind == 0:
+                    dx = xlist[ind] - xlist[ind + 1]
+                    coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                            staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                            dx) / \
+                                    hydraulicdiamlist[ind] * (
+                                                .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+                else:
+                    dx = xlist[ind - 1] - xlist[ind]
+                    coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
+                                                            staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
+                                            dx) / \
+                                    hydraulicdiamlist[ind] * (
+                                            .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
+
+
+                coolantpressurelist[ind] = coolantpressure
+                x = xlist[ind]
+                
+                Tri = Trlist[ind]
+                gassidearea = thrustchamber.areaInterpolator(x)
+                try:
+                    if ind == 0:
+                        if abs(rgaslist[ind]-params['re'])>abs(rgaslist[-1]-params['re']):
+                            rgaslist=np.flip(rgaslist) #you didnt do your list the right way idiot
+                except:
+                    pass #no params['re']
+                rgas = rgaslist[ind]
+                fincoolingfactorfunc_atstation = lambda hc, kw : fincoolingfactorfunc(hc,kw,ind)
+
+                hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
+                                    staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
+                                    staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
+                                    staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
+                                    gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
+                                    thrustchamber.machInterpolator(x), params['gamma'])
+
+                Qdotlist[ind] = hglist[ind] * (Tri - Twglist[ind])*2*math.pi*rgas/nlist[ind] #This is Qdot per unit length, so it should be multiplied by dx to get actual total heat flux. This overcomplicates solver
+                Qdot_throughwall = abs(staticnozzleparameters['kw']((Twglist[ind]+Twclist[ind])/2)/twlist[ind]*(Twglist[ind]-Twclist[ind]))*2*math.pi*rgas/nlist[ind] 
+               
+                #update twglist by mupltipliyng Qdot by dt, then divide by heat capacity and mass CURRENTLY ASSUMING MASS IS HALF OF TOTAL FOR CHANEL
+                Twglist[ind] =Twglist[ind] + dt*(Qdotlist[ind] - Qdot_throughwall)*dxlist[ind] /(Vollist[ind]/2*matprops['rho']* matprops['cp']((Twglist[ind]+Twclist[ind])/2))
+
+                #Check huzel and huang page 98 for graph of effect of helicity on hc
+                turningangle = math.pi/2-helicitylist[ind]
+                curvature_enhancement_factor =  np.max([1,np.min([1.4/18*turningangle*180/math.pi-1.4/18*20+1, 1.4,
+                -1.4/20*turningangle*180/math.pi+1.4/20*80])])#cheesy linear interp
+                hci = curvature_enhancement_factor*hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
+                        staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'], coolingfactorlist[ind]) #only reason we guess twci now is to get hci, otherwise we are calculating the thermal resistance directly from twg to tc
+                nf = fincoolingfactorfunc_atstation(hci,staticnozzleparameters['kw']((Twglist[ind]+Twclist[ind])/2)) # THIS IS FIN EFFICIENCY * 2 * CH + CW , if you dont want to factor in fin cooling just set this equal to cw
+                Rtotal = (twlist[ind] / staticnozzleparameters['kw']((Twglist[ind]+Twclist[ind])/2)       )*2*math.pi*rgas/nlist[ind]+1/(nf*hci)*math.sin(helicitylist[ind]) #missing a factor of 1/dx, to be consistent with Qdotguess being per unit length
+                # dividing by the sin of helicity here implies that the fin is acting over dx/sin(helicity), which it is!
+                Qdothc = 1/Rtotal * (Twclist[ind]-Tc) #/ math.sin(helicity) #smaller helicity means longer chanel length per dx, resulting in more heat flux into coolant
+                
+                Twclist[ind] =Twclist[ind] + dt*(Qdot_throughwall - Qdothc)*dxlist[ind] /(Vollist[ind]/2*matprops['rho']* matprops['cp']((Twglist[ind]+Twclist[ind])/2))
+
+                qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
+                # This works since its the same method used in qdotdiff function, its just a one iteration approx
+                
+                hclist[ind] = hci
+                fincoolingfactorlist[ind] = dx*fincoolingfactorfunc_atstation(hclist[ind],(matprops['kw']((Twglist[ind]+Twclist[ind])/2)))\
+                                            /math.sin(staticnozzleparameters['helicitylist'][ind])/(gassidearea/nlist[ind])
+                #This is the ratio of corrected coolant side area over gas side area servicied by coolant passage
+                #This would be (2*ch*finefficiency + cw)*(dx/sin(helicity)) / (gassidearea/numchanels)
+                Tc = Tc +  Qdothc * dxlist[ind] / (params['mdot_fuel']/nlist[ind] * heatCapacity(Tc, staticnozzleparameters))
+                rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
+                viscositylist[ind]= viscosity(Tc,coolantpressure,  staticnozzleparameters['pObj'],staticnozzleparameters['pObjWater'],staticnozzleparameters['ethpercent'])
+                Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
+                                            staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
+                
+        
+        
+        
+        if time==0:
+            coolantpressuremat =np.reshape( coolantpressurelist,(1,xlist.size))
+            Twgmat =np.reshape(  Twglist,(1,xlist.size))
+            hgmat = np.reshape( hglist,(1,xlist.size))
+            qdotmat =np.reshape( qdotlist,(1,xlist.size)) 
+            if not useqdot:
+                Qdotmat =np.reshape(Qdotlist,(1,xlist.size))
+                fincoolingfactormat =np.reshape( fincoolingfactorlist,(1,xlist.size))
+            Twcmat = np.reshape( Twclist,(1,xlist.size)) 
+            hcmat =np.reshape( hclist,(1,xlist.size))
+            Tcmat = np.reshape( Tclist,(1,xlist.size))
+            rhomat = np.reshape(rholist,(1,xlist.size)) 
+            viscositymat =  np.reshape(viscositylist,(1,xlist.size)) 
+            Remat =  np.reshape(Relist,(1,xlist.size))
+        
+        else:
+            coolantpressuremat = np.concatenate( (coolantpressuremat,np.reshape( coolantpressurelist,(1,xlist.size))))
+            Twgmat =  np.concatenate((Twgmat,np.reshape(  Twglist,(1,xlist.size))))
+            hgmat = np.concatenate( (hgmat, np.reshape( hglist,(1,xlist.size))))
+            qdotmat =np.concatenate((qdotmat, np.reshape(  qdotlist,(1,xlist.size)) ))
+            if not useqdot:
+                Qdotmat =np.concatenate( (Qdotmat,np.reshape( Qdotlist,(1,xlist.size))))
+                fincoolingfactormat = np.concatenate( (fincoolingfactormat,np.reshape( fincoolingfactorlist,(1,xlist.size))))
+            Twcmat = np.concatenate((Twcmat , np.reshape(  Twclist,(1,xlist.size)) ))
+            hcmat = np.concatenate((hcmat, np.reshape( hclist,(1,xlist.size))))
+            Tcmat = np.concatenate( (Tcmat,np.reshape(  Tclist,(1,xlist.size))))
+            rhomat =np.concatenate( ( rhomat, np.reshape( rholist,(1,xlist.size)) ))
+            viscositymat =np.concatenate((viscositymat,  np.reshape(  viscositylist,(1,xlist.size)) ))
+            Remat = np.concatenate( (Remat, np.reshape( Relist,(1,xlist.size))))
+        
+        
+        Tc = initialcoolanttemp
+        coolantpressure = initialcoolantpressure
+        coolantpressurelist = np.zeros(xlist.size)
+        #Twglist = np.zeros(xlist.size)
+        hglist = np.zeros(xlist.size)
+        qdotlist = np.zeros(xlist.size)
+        if not useqdot:
+            Qdotlist = np.zeros(xlist.size)
+            fincoolingfactorlist = np.zeros(xlist.size)
+        #Twclist = np.zeros(xlist.size)
+        hclist = np.zeros(xlist.size)
+        Tclist = np.zeros(xlist.size)
+        rholist = np.zeros(xlist.size)
+        viscositylist = np.zeros(xlist.size)
+        Relist = np.zeros(xlist.size)
+
+        print(time)
+        time += dt
+
+    return Twgmat, hgmat, Qdotmat, Twcmat, hcmat, Tcmat, \
+        coolantpressuremat, qdotmat, fincoolingfactormat, rhomat, viscositymat, Remat, time
 
 
 # ns stands for nozzle start, use finite area combustor CEA to find it (or just use pc and tcomb)
@@ -244,15 +660,18 @@ def recoveryTemp(temp, gam, mach, Pr=None):
 
 def qdotdiffMinimizer(staticnozzleparams, a, mach, gamma,
                       Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor):
-    return scipy.optimize.minimize_scalar(qdotdiff, bounds=(750, Tri), tol=10, method='bounded',
+    return scipy.optimize.minimize_scalar(qdotdiff, bounds=(350, Tri), tol=10, method='bounded',
                                           args=(staticnozzleparams, a, mach, gamma,
                                                 Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam,
                                                 coolingfactor, heatingfactor))['x']  # going to find root of qdotdiff for twg
-def qdotdiffMinimizerJayLeno(staticnozzleparams, a, mach, gamma,
-                      Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor):
-    return scipy.optimize.minimize_scalar(qdotdiffjayleno, bounds=(750, Tri), method='bounded', tol=10, args=(staticnozzleparams, a, mach, gamma,
+def QdotdiffMinimizer(staticnozzleparams, a, mach, gamma,
+                      Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor, rgas, n, fincoolingfactorfunc,
+                      helicity = math.pi/2):
+    return scipy.optimize.minimize_scalar(Qdotdiff, bounds=(350, Tri), tol=.01, method='bounded',
+                                          args=(staticnozzleparams, a, mach, gamma,
                                                 Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam,
-                                                coolingfactor, heatingfactor))['x']
+                                                coolingfactor, heatingfactor, rgas, n, fincoolingfactorfunc, helicity))['x']  # going to find root of qdotdiff for twg
+
 
 def qdotdiff(Twgi, staticnozzleparams, a, mach, gamma,
              Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor):
@@ -269,22 +688,35 @@ def qdotdiff(Twgi, staticnozzleparams, a, mach, gamma,
     qdothc = hci * (Twci - Tc)
     return abs(qdothc - qdotguess)
 
-#this is adding a layer of cermaic coating (similar to the jay leno steam fireb ox thing idk its in a video somewhere)
-def qdotdiffjayleno(Twgi, staticnozzleparams, a, mach, gamma,
-             Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor):
+
+def Qdotdiff(Twgi, staticnozzleparams, a, mach, gamma,
+             Tri, Tc, tw, coolantpressure, coolantvelocity, hydraulicdiam, coolingfactor, heatingfactor, rgas, n, fincoolingfactorfunc,
+             helicity = math.pi/2):
     hgi = heatingfactor*Bartz(staticnozzleparams['throatdiameter'], staticnozzleparams['viscosityns'],
                 staticnozzleparams['prandtlns'], staticnozzleparams['cpns'],
                 staticnozzleparams['pcns'], staticnozzleparams['cstar'], staticnozzleparams['throatRadiusCurvature'],
                 staticnozzleparams['at'],
                 a, Twgi, staticnozzleparams['tcns'], mach, gamma)
-    hgi = 1/(1/hgi+1/staticnozzleparams['hcoating'])
-    qdotguess = hgi * (Tri - Twgi)
-    Twci = Twgi - ((qdotguess * tw) / staticnozzleparams['kw'](Twgi))  # get the initial guess
-    Twci = Twgi - ((qdotguess * tw) / staticnozzleparams['kw']((Twgi + Twci) / 2))  # now use avg wall temp
-    hci = hc(Twci, Tc, coolantpressure, coolantvelocity, hydraulicdiam, staticnozzleparams['pObj'],
-             staticnozzleparams['pObjWater'], staticnozzleparams['ethpercent'], coolingfactor)
-    qdothc = hci * (Twci - Tc)
-    return abs(qdothc - qdotguess)
+    hgi = 1/( 1/hgi) #lol
+    Qdotguess = hgi * (Tri - Twgi)*2*math.pi*rgas/n #This is Qdot per unit length, so it should be multiplied by dx to get actual total heat flux. This overcomplicates solver
+    Twci = Twgi - ((Qdotguess/(2*math.pi*rgas/n) * tw) / staticnozzleparams['kw'](Twgi))# get the initial guess
+    kwi = staticnozzleparams['kw']((Twgi+Twci)/2)
+    Twci = Twgi - ((Qdotguess/(2*math.pi*rgas/n) * tw) / staticnozzleparams['kw']((Twgi+Twci)/2)) # now use avg wall temp
+    
+    #Check huzel and huang page 98 for graph of effect of helicity on hc
+    turningangle = math.pi/2-helicity
+    curvature_enhancement_factor =  np.max([1,np.min([1.4/18*turningangle*180/math.pi-1.4/18*20+1, 1.4,
+     -1.4/20*turningangle*180/math.pi+1.4/20*80])])#cheesy linear interp
+    hci = curvature_enhancement_factor*hc(Twci, Tc, coolantpressure, coolantvelocity, hydraulicdiam, staticnozzleparams['pObj'],
+             staticnozzleparams['pObjWater'], staticnozzleparams['ethpercent'], coolingfactor) #only reason we guess twci now is to get hci, otherwise we are calculating the thermal resistance directly from twg to tc
+    nf = fincoolingfactorfunc(hci,kwi) # THIS IS FIN EFFICIENCY * 2 * CH + CW , if you dont want to factor in fin cooling just set this equal to cw
+    Rtotal = (tw / (kwi)       )*2*math.pi*rgas/n+1/(nf*hci)*math.sin(helicity) #missing a factor of 1/dx, to be consistent with Qdotguess being per unit length
+    # dividing by the sin of helicity here implies that the fin is acting over dx/sin(helicity), which it is!
+    Qdothc = 1/Rtotal * (Twci-Tc) #/ math.sin(helicity) #smaller helicity means longer chanel length per dx, resulting in more heat flux into coolant
+    #print(f"{[Twgi, hgi, hci, nf, Qdotguess, Qdothc, abs(Qdothc - Qdotguess)]},")
+    return abs(Qdothc - Qdotguess)
+
+
 def hc(tempwall, temp, pres, fluidvelocity, hydraulicdiam, pObj, pObjWater, ethpercent, coolingfactor):
     Re = reynolds(temp, pres, fluidvelocity, hydraulicdiam, pObj, pObjWater, ethpercent)
     Pr = prandtl(temp, pres, pObj, pObjWater, ethpercent)
@@ -312,7 +744,7 @@ def hc(tempwall, temp, pres, fluidvelocity, hydraulicdiam, pObj, pObjWater, ethp
         viscosityw = ethpercent * viscosityethw + (1 - ethpercent) * viscositywaterw
         if math.isnan(viscosityw):
             viscosityw=viscosity #make this a non factor since it keeps breaking
-    # FIGURE OUT THESE COEFFICIENTS PETE, PAGE 198 IN HEISTER eider - tate equation
+    # FIGURE OUT THESE COEFFICIENTS PETE, PAGE 197 IN HEISTER eider - tate equation
     a = .027  # this is the weirtd one, its just a multiplier. Maybe include thisi n the cooling factor list? it depends on coolabnt, heister page 198
     m = .8
     n = .5 #.4
@@ -412,11 +844,11 @@ def turbulentCfImplicit(cf, roughness, diameter,
             -2 * math.log(roughness / diameter / 3.7 + 2.51 / Re / math.sqrt(cf * 4), 10) - 1 / math.sqrt(cf * 4))
     except:
         return abs(
-            -2 * math.log(roughness / diameter / 3.7 + 2.51 / Re / math.sqrt(cf * 4), 10) - 1 / math.sqrt(
+            -2 * math.log(roughness / diameter / 3.7 + 2.51 / Re / math.sqrt(cf * 4 + .00001), 10) - 1 / math.sqrt(
                 (cf + .00001) * 4))
 def viscosity(    temp, pres,  pObj, pObjWater, ethpercent):
     if ethpercent is None:
-        return .1 * pObj.Visc_compressed(temp * const.degKtoR,
+        return .1 * pObj.Visc_compressed(temp * const.degKtoR, #Converting from poise to pascal-seconds
                                               pres / const.psiToPa)
     else:
 
@@ -426,116 +858,4 @@ def viscosity(    temp, pres,  pObj, pObjWater, ethpercent):
                                                         pres / const.psiToPa)
 
         return  ethpercent * viscosityeth + (1 - ethpercent) * viscositywater
-
-# DELETE THIS SOON AND ADD THE COATING ANOTHER WAY
-def steadyStateTemperaturesJayLeno(wallmaterial, thrustchamber, params, salist, numchanels, coolingfactorlist,
-                            heatingfactorlist, xlist, vlist, initialcoolanttemp, initialcoolantpressure, twlist,
-                            hydraulicdiamlist):
-    if not (get_prop(params['fuelname']) is None):
-        pObj = get_prop(params['fuelname'])
-        ethpercent = None
-        pObjWater = None
-    else:
-        try:
-            print('Fuel does not exist, assuming its a water ethanol blend')
-            ethpercent = int(regex.search(r'\d+', params['fuelname']).group()) / 100
-            pObj = get_prop("ethanol")
-            pObjWater = get_prop("water")
-        except:
-            print("rocketProps busted lol")
-
-    try:
-        wallmaterialprops = json.load(wallmaterial)
-    except:
-        #IT WOULD BE COOL TO HAVE LOADABLE MATERIALS!
-        # print("either you didn't call this with a mat name or its not set up yet")
-        kwInterpolator = interpolate.interp1d(np.hstack(np.arange(100,1001,100)+273.5,10000),
-                                             np.array([12.9,13.9,16.1,18.2,20,22.1,24.7,31.4,30.1,31.5,36.7,36.7]), kind='linear')
-        matprops = {'kw': kwInterpolator}  # copper = 398, mild steel = 51??
-
-    staticnozzleparameters = {
-        'throatdiameter': thrustchamber.rt * 2,
-        'prandtlns': params['prns'],
-        'viscosityns': params['viscosityns'],
-        'cpns': params['cpns'],
-        'pcns': params['pc'],
-        'cstar': params['cstar'],
-        'throatRadiusCurvature': params["throat_radius_curvature"],
-        'at': thrustchamber.at,
-        'tcns': params['temp_c'],
-        'kw': matprops['kw'],
-        'pObj': pObj,
-        'pObjWater': pObjWater,
-        'ethpercent': ethpercent,
-        'coatingthickness' : .00076,
-        'kcoating' : 10.1,
-        'hcoating': 14470,
-        'roughness' : 32*10**-6
-    }
-
-    Trlist = np.zeros(xlist.size)
-    for ind in np.arange(0, xlist.size):
-        x = xlist[ind]
-        Trlist[ind] = recoveryTemp(thrustchamber.tempInterpolator(xlist[ind]), params['gamma'],
-                                   thrustchamber.machInterpolator(xlist[ind]), Pr=params['pr_throat'])
-
-    Tc = initialcoolanttemp
-    coolantpressure = initialcoolantpressure
-    coolantpressurelist = np.zeros(xlist.size)
-    Twglist = np.zeros(xlist.size)
-    hglist = np.zeros(xlist.size)
-    qdotlist = np.zeros(xlist.size)
-    Twclist = np.zeros(xlist.size)
-    hclist = np.zeros(xlist.size)
-    Tclist = np.zeros(xlist.size)
-    rholist = np.zeros(xlist.size)
-    viscositylist = np.zeros(xlist.size)
-    Relist = np.zeros(xlist.size)
-
-    for ind in np.arange(0, xlist.size):
-        Tclist[ind] = Tc  # set cooland at current station to coolant temp
-        if ind == 0:
-            coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                                       staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
-                                      xlist[ind] - xlist[ind+1]) / \
-                              hydraulicdiamlist[ind] * (.5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
-        else:
-            coolantpressure = coolantpressure - 4 * cf(Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                                   staticnozzleparameters, roughness=staticnozzleparameters['roughness']) * (
-                                  xlist[ind - 1] - xlist[ind]) / \
-                          hydraulicdiamlist[ind] * (
-                                  .5 * rho(Tc, coolantpressure, staticnozzleparameters) * vlist[ind] ** 2)
-        coolantpressurelist[ind] = coolantpressure
-        x = xlist[ind]
-        print(x)
-        Tri = Trlist[ind]
-        gassidearea = thrustchamber.areaInterpolator(x)
-
-        Twglist[ind] = qdotdiffMinimizerJayLeno(staticnozzleparameters, gassidearea, thrustchamber.machInterpolator(x),
-                                         params['gamma'],
-                                         Tri, Tc, twlist[ind], coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                                         coolingfactorlist[ind],heatingfactorlist[ind])
-        hglist[ind] = heatingfactorlist[ind]*Bartz(staticnozzleparameters['throatdiameter'], staticnozzleparameters['viscosityns'],
-                            staticnozzleparameters['prandtlns'], staticnozzleparameters['cpns'],
-                            staticnozzleparameters['pcns'], staticnozzleparameters['cstar'],
-                            staticnozzleparameters['throatRadiusCurvature'], staticnozzleparameters['at'],
-                            gassidearea, Twglist[ind], staticnozzleparameters['tcns'],
-                            thrustchamber.machInterpolator(x), params['gamma'])
-        hglist[ind] = 1/(1/hglist[ind]+1/staticnozzleparameters['hcoating'])
-        qdotlist[ind] = hglist[ind] * (Trlist[ind] - Twglist[ind])
-        # This works since its the same method used in qdotdiff function, its just a one iteration approx
-        Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind])) / twlist[ind])
-        Twclist[ind] = Twglist[ind] - qdotlist[ind] / (matprops['kw']((Twglist[ind] + Twclist[ind]) / 2) / twlist[ind])
-        hclist[ind] = hc(Twclist[ind], Tc, coolantpressure, vlist[ind], hydraulicdiamlist[ind],
-                         staticnozzleparameters['pObj'], staticnozzleparameters['pObjWater'],
-                         staticnozzleparameters['ethpercent'], coolingfactorlist[ind])
-        Tc = Tc + qdotlist[ind] * salist[ind] / (params['mdot_fuel'] * heatCapacity(Tc, staticnozzleparameters))
-        rholist[ind] = rho(Tc, coolantpressure, staticnozzleparameters)
-        viscositylist[ind] = viscosity(Tc, coolantpressure, staticnozzleparameters['pObj'],
-                                       staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
-        Relist[ind] = reynolds(Tc,coolantpressure,vlist[ind],hydraulicdiamlist[ind], staticnozzleparameters['pObj'],
-                                       staticnozzleparameters['pObjWater'], staticnozzleparameters['ethpercent'])
-
-    return Twglist, hglist, qdotlist, Twclist, hclist, Tclist, \
-           coolantpressurelist, qdotlist, Trlist, rholist, viscositylist, Relist
 

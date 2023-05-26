@@ -31,14 +31,15 @@ import matplotlib.pyplot as plt
 from rocketcea.cea_obj_w_units import CEA_Obj
 from ambiance import Atmosphere
 import Components.StructuralApproximation as SA
+from Toolbox import PressureDropCalculator as PD
 heights = np.linspace(-5e3, 80e3, num=1000) #https://pypi.org/project/ambiance/
 atmosphere = Atmosphere(heights)
 
-PressureInterpolator = interpolate.interp1d(np.concatenate((heights,[500000]),axis=0),
+PressureInterpolator = interpolate.interp1d(np.concatenate((heights,[50000000]),axis=0),
     np.concatenate((atmosphere.pressure,[0]),axis=0), kind='linear')
-DensityInterpolator = interpolate.interp1d(np.concatenate((heights,[500000]),axis=0),
+DensityInterpolator = interpolate.interp1d(np.concatenate((heights,[50000000]),axis=0),
     np.concatenate((atmosphere.density,[0]),axis=0), kind='linear')
-CdInterpolator = interpolate.interp1d([0,1,2,3,4,5,6,7,8],[.1,.5,.4,.3,.15,.12,.10,.09,.08],kind='cubic')
+CdInterpolator = interpolate.interp1d([0,1,2,3,4,5,6,7,8,1000],[.1,.5,.4,.3,.15,.12,.10,.09,.08,0],kind='cubic')
 
 """Currently two working configs:
 
@@ -175,12 +176,12 @@ def ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time= None, title =
     fig.suptitle(title)
     axs[0, 0].plot(np.arange(0, (np.where(hlist==0)[0][1])*dt-dt/2, dt), hlist[0:np.where(hlist==0)[0][1]], 'g')  # row=0, column=0
     axs[1, 0].plot(np.arange(0, (np.where(hlist==0)[0][1]*dt-dt/2), dt), vlist[0:np.where(hlist==0)[0][1]], 'b')  # row=1, column=0
-    axs[0, 1].plot(np.arange(0, np.where(hlist==0)[0][1]*dt-dt/2, dt), alist[0:np.where(hlist==0)[0][1]], 'g')  # row=0, column=0
-    axs[1, 1].plot(np.arange(0, np.where(hlist==0)[0][1]*dt-dt/2, dt), machlist[0:np.where(hlist==0)[0][1]], 'b')  # row=1, column=0
+    axs[0, 1].plot(np.arange(0, np.where(hlist==0)[0][1]*dt-dt/2, dt), alist[0:np.where(hlist==0)[0][1]], 'm')  # row=0, column=0
+    axs[1, 1].plot(np.arange(0, np.where(hlist==0)[0][1]*dt-dt/2, dt), machlist[0:np.where(hlist==0)[0][1]], 'k')  # row=1, column=0
     axs[0, 2].plot(np.arange(0, time, dt), thrustlist[0:np.size(np.arange(0, time, dt))],
                   'r')  # row=0, column=1
     axs[1, 2].plot(np.arange(0, time, dt), isplist[0:np.size(np.arange(0, time, dt))],
-                  'k')  # row=1, column=1
+                  'c')  # row=1, column=1
     
     axs[0, 0].set_title('Height')
     axs[1, 0].set_title('Velo (M/s)')
@@ -196,23 +197,31 @@ def rocketEquationCEA(params, mi = None, thrust = None, burntime = None, L = Non
     if dt is None:
         dt=.05
 
-    if ispcorrection is None:
-        ispcorrection = 1
-
+    #if ispcorrection is None:
+    ispcorrection = 1 #This is legacy, all isp corrections should be done before you get to this point. Just input the right isp in params lol.
+    
     if Af is None:
         Af = math.pi *(12*.0254/2)**2 # frontal area, 12 in rocket
 
     if H is None:
 
-        expectedTime = int((burntime+180)/dt)
+        expectedTime = int((burntime+280)/dt)
+
+        try:
+            thrust=params['numengines']*thrust
+            expectedTime = int((burntime+180*params['numengines'])/dt)
+        except:
+            pass
+            
         vlist=np.zeros(expectedTime)
+        draglist=np.zeros(expectedTime)
         machlist = np.zeros(expectedTime)
         hlist=np.zeros(expectedTime)
         thrustlist = np.zeros(expectedTime)
         isplist = np.zeros(expectedTime)
         h = 0
         v = 0
-
+        
         mdot = thrust / (9.81 * params['isp'])
         Mp = mdot * burntime
         if mi is None:
@@ -237,10 +246,12 @@ def rocketEquationCEA(params, mi = None, thrust = None, burntime = None, L = Non
                                            frozen=0, frozenAtThroat=0)[0]
             vlist[ind] = v
             hlist[ind] = h
+            draglist[ind] = D
             ind = ind + 1
-
+            if ind%100 == 0:
+                print(t)
         while v > 0:
-
+            
             h = h + v * dt
             machlist[ind] = v / math.sqrt(1.4 * PressureInterpolator(h) / DensityInterpolator(h))
             cdtemp = CdInterpolator(machlist[ind])
@@ -248,8 +259,9 @@ def rocketEquationCEA(params, mi = None, thrust = None, burntime = None, L = Non
             v = v - 9.81 * dt + D / M * dt
             vlist[ind] = v
             hlist[ind] = h
+            draglist[ind] = D
             ind = ind + 1
-
+        print(f"max height reached = {h} meters")
         return h, hlist, vlist, thrustlist, isplist, machlist
 
     elif L is None and mi is None:
@@ -316,7 +328,7 @@ def rocketEquationCEA(params, mi = None, thrust = None, burntime = None, L = Non
                 vlist[ind] = v
                 hlist[ind] = h
                 ind = ind + 1
-
+        print(f"max height reached = {h} meters")
         return L, hlist, vlist, thrustlist, isplist, machlist
 
 def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None, Af=None, ispcorrection = None):
@@ -338,10 +350,21 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
     # so im finding the rocket with that impulse and thurst to weight
     while abs(miinittemp-mi)>2:
         miinittemp=mi
-        mi, L, totalmass, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank = SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
+        mi, L, totalmass, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank = SA.mass_approx(params['pc'], params['dp'], 12, params['rho_fuel'], params['rho_ox'],
                                                        params['thrust'], params['isp'], params['time'], params['rm'])
         params['thrust'] = totalmass * thrustToWeight * 9.81  # recompute with a resonable thrust
         params['time'] = impulse/params['thrust']
+        params['mdot'] = params['thrust']/params['isp']/params['g']
+        params['mdot_fuel'] = params['mdot']/(params['rm']+1)
+        params['mdot_ox'] = params['rm']*params['mdot']/(params['rm']+1)
+        oxpd, fuelpd, dparray = PD.pressureDrop(OxDensityMetric = params['rho_ox'],     # kg/m^3
+                                    OxMassFlowMetric = params['mdot_ox'], # kg/s
+                                    OxTubeDiam = 3/4, #in  
+                                    FuelDensityMetric = params['rho_fuel'],       # kg/m^3
+                                    FuelMassFlowMetric = params['mdot_fuel'],# kg/s
+                                    FuelTubeDiam = 3/4 ,
+                                    params = params               )
+        params['dp'] = dparray 
         print(f"MI is {mi} and Thrust is {params['thrust']}")
     h=H-1
     impulse1 = impulse+10000
@@ -376,14 +399,26 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
         while abs(miinittemp - mi) > 2:
             miinittemp = mi
             params['thrust'] = totalmass * thrustToWeight * 9.81  # recompute with a resonable thrust
-            params['time'] = impulse / params['thrust']
-            mi, L, totalmass, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank = SA.mass_approx(params['pc'], dp, 12, params['rho_fuel'], params['rho_ox'],
+            params['time'] = impulse/params['thrust']
+            params['mdot'] = params['thrust']/params['isp']/params['g']
+            params['mdot_fuel'] = params['mdot']/(params['rm']+1)
+            params['mdot_ox'] = params['rm']*params['mdot']/(params['rm']+1)
+            oxpd, fuelpd, dparray = PD.pressureDrop(OxDensityMetric = params['rho_ox'],     # kg/m^3
+                                        OxMassFlowMetric = params['mdot_ox'], # kg/s
+                                        OxTubeDiam = 3/4, #in  
+                                        FuelDensityMetric = params['rho_fuel'],       # kg/m^3
+                                        FuelMassFlowMetric = params['mdot_fuel'],# kg/s
+                                        FuelTubeDiam = 3/4 ,
+                                        params = params               )
+            params['dp'] = dparray 
+            mi, L, totalmass, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank = SA.mass_approx(params['pc'], params['dp'], 12, params['rho_fuel'], params['rho_ox'],
                                               params['thrust'], params['isp'], params['time'], params['rm'])
 
-            print(f"MI is {mi}, L is {L} and Thrust is {params['thrust']}")
+            print(f"MI is {mi}, L is {L} and Thrust is {params['thrust']} and dp is {params['dp']}")
 
         expectedTime = int((params['time'] + 180) / dt)+1000
         vlist = np.zeros(expectedTime)
+        draglist = np.zeros(expectedTime)
         hlist = np.zeros(expectedTime)
         machlist = np.zeros(expectedTime)
         thrustlist = np.zeros(expectedTime)
@@ -414,6 +449,7 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
             isplist[ind] = ispcorrection*ispamb
             vlist[ind] = v
             hlist[ind] = h
+            draglist[ind] = D
             ind = ind + 1
 
         while v > 0:
@@ -425,9 +461,16 @@ def rocketEquationCEA_MassAprox(params, impulse, thrustToWeight, H, dp, dt=None,
             v = v - 9.81 * dt + D / M * dt
             vlist[ind] = v
             hlist[ind] = h
+            draglist[ind] = D
             ind = ind + 1
         impulselist[index]=impulse
         hslist[index]=h
     print(f"got to {h} at impulse {impulse} and mi = {mi}")
     print(f"MI is {mi}, L is {L} and Thrust is {params['thrust']}")
-    return L, mi, hlist, vlist, thrustlist, isplist, machlist, #hslist, impulselist
+    #plt.plot(np.arange(0,60,dt),draglist[0:int(60/dt)], label="Drag")
+    ##plt.plot(np.arange(0,60,dt),thrustlist[0:int(60/dt)], label="Thrust")
+    #plt.ylabel("Force [N]")
+    #plt.xlabel("Time [s]")
+    #plt.legend()
+    #plt.title("Forces on rocket for first minute of flight")
+    return L, mi, hlist, vlist, thrustlist, isplist, machlist#, hslist, impulselist

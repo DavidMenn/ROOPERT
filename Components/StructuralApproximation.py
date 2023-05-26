@@ -9,6 +9,13 @@ import math
 from Toolbox.Constant import psiToPa, lbToKg
 import os
 def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=False, outputdir = ""):
+    try:
+        fueldp = dp[0]
+        oxdp = dp[1]
+    except:
+        fueldp = dp
+        oxdp = dp
+        print('YOU SHOULD BE PASSING SEPERATE DPS')
     strcutresweight = 50.6*lbToKg;
     propweight =89.72*lbToKg;
     cfuelweight =5.3*lbToKg;
@@ -34,8 +41,9 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
     vol_ox	= mf_ox*burntime/rho_ox;
     vol_fuel	= mf_fuel*burntime/rho_f;
     P_pres =	4500*psiToPa;
-    P_tank =	Pc+dp;
-    vol_pres =P_tank*(vol_fuel+vol_ox)/(P_pres-P_tank); #compresasbility
+    P_tank_fuel =	Pc+fueldp;
+    P_tank_ox = Pc+oxdp
+    vol_pres = (P_tank_fuel*vol_fuel)/(P_pres-P_tank_fuel)+(P_tank_ox*vol_ox)/(P_pres-P_tank_ox); #compresasbility
 
 
     heightox	=(vol_ox/(1-ulox))/(math.pi*(diam_tank/2)**2);
@@ -45,41 +53,43 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
     Sy = 40000*psiToPa;
     Fs	=2;
     rho_tank =	2710 #kg/m3
-    t_prop	=P_tank*diam_tank/(2*Sy)*Fs;
+    t_prop_fuel	=P_tank_fuel*diam_tank/(2*Sy)*Fs;
+    t_prop_ox	=P_tank_ox*diam_tank/(2*Sy)*Fs;
     t_pres	=P_pres*diam_tank/(2*Sy)*Fs;
 
-    weight_f	=((math.pi*diam_tank*heightfuel)+2*math.pi*(diam_tank/2)**2)*t_prop*rho_tank;
-    weight_ox	=((math.pi*diam_tank*heightox)+2*math.pi*(diam_tank/2)**2)*t_prop*rho_tank;
+    weight_f	=((math.pi*diam_tank*heightfuel)+2*math.pi*(diam_tank/2)**2)*t_prop_fuel*rho_tank;
+    weight_ox	=((math.pi*diam_tank*heightox)+2*math.pi*(diam_tank/2)**2)*t_prop_ox*rho_tank;
     weight_pres	=((math.pi*diam_tank*heightpres)+2*math.pi*(diam_tank/2)**2)*t_pres*rho_tank;
 
     massFuelTank = 0
     massOxTank = 0
     while abs(weight_f-massFuelTank)>.01:
         weight_f=massFuelTank
+        weight_ox=massOxTank
         newheight=(currentheight-(fuelheight+oxheightcurrent+presheightcurrent))*8/OD+(heightox+heightfuel+heightpres);#(currentheight-(fuelheight+oxheightcurrent+presheightcurrent))*OD/8+(heightox+heightfuel+heightpres);
         Saratio=(newheight*math.pi/4*OD**2)/(currentheight*math.pi/4*8**2); #GET RID OF THIS
         mdotratio=mf/(4.72*0.453592);
-        Pratio_prop=P_tank/(950*psiToPa);
+        Pratio_prop=P_tank_ox/(950*psiToPa);
         Pratio_pres=P_pres/(4500*psiToPa);
 
         global wtc, wav, wfox, wpresys, wpres, whelium, wstruct
 
-        wtc=mdotratio*(cTC);
-        wav=mdotratio*Pratio_prop*(cav); # FIX ALL THESE
-        wfox=mdotratio*Pratio_prop*(cfoxhole);
-        wpresys=mdotratio*Pratio_pres*cpressys;
-        wpres=(vol_pres/0.0055217851)*cpresweight; #make sure this is in metric
+        wtc= (57+11) * lbToKg# mdotratio*(cTC);
+        wav = (47+.5*13)*lbToKg # mdotratio*Pratio_prop*(cav); # FIX ALL THESE
+        wfox= 0 #mdotratio*Pratio_prop*(cfoxhole);
+        wpresys=0       #mdotratio*Pratio_pres*cpressys;
+        wpres=(82+.5*30) * lbToKg #(vol_pres/0.0055217851)*cpresweight; #make sure this is in metric
         whelium=vol_pres*44.472*P_pres/(31.02*10**6); # this is denisty from refprop for 4500 psi
 
         # # Ideally You would use these not an overall structures weight
-        massNoseCone =  11.83*lbToKg # THIS IS A GUESS
-        massFins = 4 # THIS IS ALSO A GUESS
-        massRecovery = 10 # THIS IS ALSO A GUESS
+        massNoseCone =  15*lbToKg #11.83*lbToKg # THIS IS A GUESS
+        massFins = 40*lbToKg # THIS IS ALSO A GUESS
+        massRecovery = 41* lbToKg # 10 # THIS IS ALSO A GUESS
         massRecoveryCoupler = 8*lbToKg;
-        massPayloadCoupler = 2.49;
-        massAirFrames = 19.962*newheight/currentheight #air frames mass scales with height!?
-        massPayload = 2.5
-        wstruct=massPayload+massAirFrames+massPayloadCoupler+massRecovery+massRecoveryCoupler+massFins+massNoseCone
+        massPayloadCoupler = 8 * lbToKg #2.49;
+        massAirFrames = 35*lbToKg #  19.962*newheight/currentheight #air frames mass scales with height!?
+        massPayload = 3
+        wstruct=110 #massPayload+massAirFrames+massPayloadCoupler+massRecovery+massRecoveryCoupler+massFins+massNoseCone
         # massAVCoupler = 0;
         # massParachuteShroud = 0;
         # massAvionicsShroud = 0;
@@ -91,14 +101,14 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
 
         # BREAK DOWN STUCTURES WEIGHT INTO COMPONENTS
         oxTankThickness,fuelTankThickness, heightfuel, heightox, massOxTank, \
-        massFuelTank,fuelTankLengthTotal,oxTankLengthTotal = MetalTankMasses((OD)*0.0254, P_tank, weight_ox, vol_ox,vol_fuel, mf_ox*burntime)
+        massFuelTank,fuelTankLengthTotal,oxTankLengthTotal = MetalTankMasses((OD)*0.0254, P_tank_fuel, P_tank_ox, weight_ox, vol_ox,vol_fuel, mf_ox*burntime)
 
-    weight_f=massFuelTank
-    weight_ox = massOxTank
+    weight_f=massFuelTank + 15 * lbToKg
+    weight_ox = massOxTank + 15 * lbToKg
+    mass_avionics = 10*lbToKg
+    
 
-
-
-    mis=wtc+wav+wfox+wpresys+wpres+wstruct+weight_f+weight_ox+whelium;
+    mis=wtc+wav+wfox+wpresys+wpres+wstruct+weight_f+weight_ox+whelium + mass_avionics; #80 + .7*weight_f+.7*weight_ox
     fuelmass=mf_fuel*burntime;
     oxmass=mf_ox*burntime;
     lambdas=(fuelmass+oxmass)/(mis+fuelmass+oxmass);
@@ -109,7 +119,8 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
             print(f"vol_ox, {vol_ox}", file=f)
             print(f"vol_fuel, {vol_fuel}", file=f)
             print(f"P_pres, {P_pres}", file=f)
-            print(f"P_tank, {P_tank}", file=f)
+            print(f"P_tank_fuel, {P_tank_fuel}", file=f)
+            print(f"P_tank_ox, {P_tank_ox}", file=f)
             print(f"vol_pres, {vol_pres}", file=f)
             print(f"t_prop: ox tank, {oxTankThickness}", file=f)
             print(f"weight_fueltank, {weight_f}", file=f)
@@ -127,6 +138,7 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
             print(f"massPayloadCoupler, {massPayloadCoupler}", file=f)
             print(f"massAirFrames, {massAirFrames}", file=f)
             print(f"massPayload, {massPayload}", file=f)
+            print(f"massAvionics, {mass_avionics}", file=f)
             print( f"Structures weight, {wstruct}", file=f)
             print(f"inert mass, {mis}", file=f)
             print(f"fuelmass, {fuelmass}", file=f)
@@ -135,7 +147,7 @@ def mass_approx(Pc,dp, OD, rho_f,rho_ox, thrust, isp, burntime, rm, printoutput=
             print(f"totalmass, {totalmasses}", file=f)
 
 
-    return mis, lambdas, totalmasses, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank
+    return mis, lambdas, totalmasses, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, [P_tank_fuel, P_tank_ox]
 
 def mass_approx_NEW():
     """Feel free to use whatever you want as inputs, though try to keep it limited
@@ -148,11 +160,12 @@ def mass_approx_NEW():
 
 
 #function [oxTankThickness,fuelTankThickness, fuelLength, oxLength, massOxTank, massFuelTank,fuelTankLengthTotal,oxTankLengthTotal] = MetalTankMasses(OD,tP,massOxTankGuess,oxVol,fuelVol)
-def MetalTankMasses(OD,tP_PA,massOxTankGuess,oxVol,fuelVol, oxWeight):
+def MetalTankMasses(OD,tP_PA_f, tP_PA_o,massOxTankGuess,oxVol,fuelVol, oxWeight):
     """
     Inputs:
     OD = Tank OD [m]
-    tP_PA = Tank Pressure [pa]
+    tP_PA_f = Tank Pressure [pa] for fuel tnak
+    tP_PA_o = Tank Pressure [pa] for ox tnak
     oxVol = volume for ox tank
     fuelVol = volume for fuel tank
     """
@@ -200,8 +213,8 @@ def MetalTankMasses(OD,tP_PA,massOxTankGuess,oxVol,fuelVol, oxWeight):
     FuelAxialLoad = massOverFuel*maxGs*9.8; # N
 
     # Calculate Tank Thickness
-    oxTankThickness = thinWallTankThicknessApproximation(maxStress,OxAxialLoad,tP_PA,tankOuterRadius);
-    fuelTankThickness = thinWallTankThicknessApproximation(maxStress,FuelAxialLoad,tP_PA,tankOuterRadius);
+    oxTankThickness = thinWallTankThicknessApproximation(maxStress,OxAxialLoad,tP_PA_o,tankOuterRadius);
+    fuelTankThickness = thinWallTankThicknessApproximation(maxStress,FuelAxialLoad,tP_PA_f,tankOuterRadius);
 
     # Find Tank IR
     fuelTankIR = tankOuterRadius-fuelTankThickness;

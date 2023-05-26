@@ -24,7 +24,7 @@ import Components.ThrustChamber as ThrustChamber
 import Components.StructuralApproximation as SA
 from scipy.optimize import minimize_scalar
 from Main import main
-
+'''
 args = {
         'thrust': 4000 * const.lbToN,  # Newtons, INITIAL GUESS
         'time': 40,  # s, INIT GUESS
@@ -222,23 +222,24 @@ plt.legend()
 
 plt.show()
 """
+'''
 """
 args = {
         'thrust': 4000 * const.lbToN,  # Newtons, INITIAL GUESS
         'time': 40,  # s, INIT GUESS
         # 'rho_ox' : 1141, #Kg/M^3
         # 'rho_fuel' : 842,
-        'pc': 350 * const.psiToPa,
+        'pc': 300 * const.psiToPa,
         'pe': 14.7 * const.psiToPa,
         # 'phi':1,
         'TWR' : 4,
         'cr': 4,
         'lstar': 1,
         'fuelname': 'Ethanol_60',
-        'oxname': 'LOX',
+        'oxname': 'N2O',
         'throat_radius_curvature': .0254 / 2,
         'dp': 150 * const.psiToPa}
-configtitle="LOXEthanol_350psi_waterpercentstudy_TWR4"
+configtitle="NitroEthanol_300psi_waterpercentstudy_TWR4"
 path=os.path.join("Configs","Tradestudies",configtitle)
 os.makedirs(path,exist_ok=False)
 
@@ -246,7 +247,7 @@ os.makedirs(path,exist_ok=False)
 #twrs = np.arange(150,751,25)*const.psiToPa
 percents = np.array([60,65,70,75,80,85,90,95,99]) 
 percenttitles= {60:'Ethanol_60',
-65:'Ethanol_60',
+65:'Ethanol_65',
 70:'Ethanol_70',
 75:'Ethanol_75',
 80:'Ethanol_80',
@@ -330,3 +331,197 @@ plt.legend()
 
 plt.show()
 """
+"""
+args = {
+        'thrust': 4000 * const.lbToN,  # Newtons, INITIAL GUESS
+        'time': 40,  # s, INIT GUESS
+        # 'rho_ox' : 1141, #Kg/M^3
+        # 'rho_fuel' : 842,
+        'pc': 300 * const.psiToPa,
+        'pe': 14.7 * const.psiToPa,
+        # 'phi':1,
+        'TWR' : 4,
+        'cr': 4,
+        'lstar': 1,
+        'fuelname': 'Ethanol_75',
+        'oxname': 'N2O',
+        'throat_radius_curvature': .0254 / 2,
+        'dp': 150 * const.psiToPa}
+configtitle="NitroEthanol75_300psi_pressuredrop_TWR4"
+path=os.path.join("Configs","Tradestudies",configtitle)
+os.makedirs(path,exist_ok=False)
+
+#twrs = np.arange(150,751,25)*const.psiToPa
+dps = np.arange(50,300,25)
+impulselist = np.zeros(dps.size)
+milist = np.zeros(dps.size)
+heightflist = np.zeros(dps.size)
+heightolist = np.zeros(dps.size)
+newheightlist=np.zeros(dps.size)
+thrustlist = np.zeros(dps.size)
+mdotlist = np.zeros(dps.size)
+mdotoxlist = np.zeros(dps.size)
+mdotfuellist = np.zeros(dps.size)
+isplist = np.zeros(dps.size)
+maxtwglist = np.zeros(dps.size)
+maxtwclist = np.zeros(dps.size) #HAD TO COMMENT OUT LINE 317 and 318 incoling system!!
+wstructlist = np.zeros(dps.size)
+lambdalist = np.zeros(dps.size)
+totalmasslist = np.zeros(dps.size)
+ind = 0
+for perc in dps:
+        args['dp']=perc* const.psiToPa 
+        print(perc)
+        params=main(args,"",output=False)
+        impulselist[ind] = params['impulse']
+        milist[ind] = params['mi']
+        heightflist[ind] = params['heightfuel']
+        heightolist[ind] = params['heightox']
+        newheightlist[ind] = params['newheight']
+        thrustlist[ind] = params['thrust']
+        mdotlist[ind] = params['mdot']
+        mdotoxlist[ind] = params['mdot_ox']
+        mdotfuellist[ind] = params['mdot_fuel']
+        isplist[ind] = params['isp']
+        maxtwglist[ind] = params['twg_max']
+        maxtwclist[ind] = params['twc_max']
+        wstructlist[ind] = params['wstruct']
+        lambdalist[ind] = params['L']
+        totalmasslist[ind]=params['M']
+        ind = ind+1
+
+
+plt.plot(dps,impulselist,'g')
+#plt.title("dps (psi) vs impulse (ns)")
+plt.title("Pressure  (psI) vs impulse (ns)")
+plt.savefig(os.path.join(path, "impulse.png"))
+plt.figure()
+plt.plot(dps,isplist,'m')
+plt.title("Pressure  (psI) vs isp (s)")
+plt.savefig(os.path.join(path, "isp.png"))
+plt.figure()
+plt.plot(dps,milist,'r')
+plt.title("Pressure  (psI) vs inert mass (kg)")
+plt.savefig(os.path.join(path, "inertmass.png"))
+plt.figure()
+plt.plot(dps,thrustlist/const.lbToN)
+plt.title("Pressure  (psI) vs sea levelthrust(lb)")
+plt.savefig(os.path.join(path, "thrust.png"))
+plt.figure()
+plt.plot(dps,newheightlist,'k')
+plt.title("Pressure  (psI) vs heights (m)")
+plt.savefig(os.path.join(path, "height.png"))
+plt.figure()
+plt.plot(dps,mdotlist,'k', label='total')
+plt.plot(dps,mdotoxlist,'b', label='ox')
+plt.plot(dps,mdotfuellist,'r', label='fuel')
+plt.title("Pressure  (psI) vs mass flow rate (kg/s)")
+plt.legend()
+plt.savefig(os.path.join(path, "mdot.png"))
+plt.figure()
+
+plt.plot(dps,maxtwglist,'r', label='max twg')
+plt.plot(dps,maxtwclist,'b', label='max twc')
+plt.title("Pressure  (psI) vs max wall temp (kelvin)")
+plt.savefig(os.path.join(path, "chambertemps.png"))
+plt.legend()
+
+plt.show()
+"""
+args = {
+        'thrust': 4000 * const.lbToN,  # Newtons
+        'time': 40,  # s
+        # 'rho_ox' : 1141, #Kg/M^3
+        # 'rho_fuel' : 842,
+        'pc': 300 * const.psiToPa,
+        'pe': 10 * const.psiToPa,
+       # 'phi':1,
+        'cr': None,
+        'TWR' : 4,
+        'lstar': 1,
+        'fuelname': 'Ethanol_75',
+        'oxname': 'N2O',
+        'throat_radius_curvature': .0254 / 2,
+        'dp': 150 * const.psiToPa,
+        'impulseguess' :  493555.8,
+        'rc' : .11} #623919}
+configtitle="TEST"
+path=os.path.join("Configs","Tradestudies",configtitle)
+os.makedirs(path,exist_ok=False)
+
+#twrs = np.arange(150,751,25)*const.psiToPa
+pes = np.arange(8,16,.25)
+impulselist = np.zeros(pes.size)
+milist = np.zeros(pes.size)
+heightflist = np.zeros(pes.size)
+heightolist = np.zeros(pes.size)
+newheightlist=np.zeros(pes.size)
+thrustlist = np.zeros(pes.size)
+mdotlist = np.zeros(pes.size)
+mdotoxlist = np.zeros(pes.size)
+mdotfuellist = np.zeros(pes.size)
+isplist = np.zeros(pes.size)
+maxtwglist = np.zeros(pes.size)
+maxtwclist = np.zeros(pes.size) #HAD TO COMMENT OUT LINE 317 and 318 incoling system!!
+wstructlist = np.zeros(pes.size)
+lambdalist = np.zeros(pes.size)
+totalmasslist = np.zeros(pes.size)
+ind = 0
+for perc in pes:
+        args['pe']=perc* const.psiToPa 
+        print(perc)
+        params=main(args,"",output=False)
+        impulselist[ind] = params['impulse']
+        milist[ind] = params['mi']
+        heightflist[ind] = params['heightfuel']
+        heightolist[ind] = params['heightox']
+        newheightlist[ind] = params['newheight']
+        thrustlist[ind] = params['thrust']
+        mdotlist[ind] = params['mdot']
+        mdotoxlist[ind] = params['mdot_ox']
+        mdotfuellist[ind] = params['mdot_fuel']
+        isplist[ind] = params['isp']
+        maxtwglist[ind] = params['twg_max']
+        maxtwclist[ind] = params['twc_max']
+        wstructlist[ind] = params['wstruct']
+        lambdalist[ind] = params['L']
+        totalmasslist[ind]=params['M']
+        ind = ind+1
+
+
+plt.plot(pes,impulselist,'g')
+#plt.title("pes (psi) vs impulse (ns)")
+plt.title("Pressure  (psI) vs impulse (ns)")
+plt.savefig(os.path.join(path, "impulse.png"))
+plt.figure()
+plt.plot(pes,isplist,'m')
+plt.title("Pressure  (psI) vs isp (s)")
+plt.savefig(os.path.join(path, "isp.png"))
+plt.figure()
+plt.plot(pes,milist,'r')
+plt.title("Pressure  (psI) vs inert mass (kg)")
+plt.savefig(os.path.join(path, "inertmass.png"))
+plt.figure()
+plt.plot(pes,thrustlist/const.lbToN)
+plt.title("Pressure  (psI) vs sea levelthrust(lb)")
+plt.savefig(os.path.join(path, "thrust.png"))
+plt.figure()
+plt.plot(pes,newheightlist,'k')
+plt.title("Pressure  (psI) vs heights (m)")
+plt.savefig(os.path.join(path, "height.png"))
+plt.figure()
+plt.plot(pes,mdotlist,'k', label='total')
+plt.plot(pes,mdotoxlist,'b', label='ox')
+plt.plot(pes,mdotfuellist,'r', label='fuel')
+plt.title("Pressure  (psI) vs mass flow rate (kg/s)")
+plt.legend()
+plt.savefig(os.path.join(path, "mdot.png"))
+plt.figure()
+
+plt.plot(pes,maxtwglist,'r', label='max twg')
+plt.plot(pes,maxtwclist,'b', label='max twc')
+plt.title("Pressure  (psI) vs max wall temp (kelvin)")
+plt.savefig(os.path.join(path, "chambertemps.png"))
+plt.legend()
+
+plt.show()

@@ -82,7 +82,7 @@ nf, NONE
 nw, NONE
 fuelname, Ethanol_75
 oxname, N2O
-CEA, <rocketcea.cea_obj_w_units.CEA_Obj object at 0x7f478989b280>
+CEA, <rocketcea.cea_obj_w_units.CEA_Obj object at 0x7f1542e41880>
 pambient, 101352.972
 cf_efficiency, 0.95
 isp_efficiency, 0.95

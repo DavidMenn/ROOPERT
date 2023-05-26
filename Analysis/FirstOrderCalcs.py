@@ -33,7 +33,7 @@ from rocketprops.rocket_prop import get_prop
 import re as regex
 import Toolbox.Constant as const
 from scipy import interpolate
-def SpreadsheetSolver(args : dict, defaults : dict = None):
+def SpreadsheetSolver(args : dict, defaults : dict = None): #defaults can be things like gravity, etc.
     paramnames = [
     'thrust', #Newtons
     'time', #s
@@ -47,7 +47,7 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
     'rm', #o/f by weight
     'phi', #ratio from stoich (1 is stoich, >1 is fuel rich)
     'at', # m^2, area of throat
-    'rt', # m, radius of throat
+    'rt', # m, radius of throat 
     'cr', # contraction ratio
     'rc', # m, combustion chamber radius
     'ac', # m^2, area combustion chamber
@@ -94,7 +94,19 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
     'CEA',
     'pambient',
     'cf_efficiency', # Huzel and Huang page 16
-    'isp_efficiency']
+    'isp_efficiency',
+    'thetac', # converging section angle
+    'thetai', # diverging angle at throat
+    'thetae',# diverign angle at exit
+    'kin_visc_fuel',
+    'kin_visc_ox',
+    'dyn_visc_fuel',
+    'dyn_visc_ox',
+    'P_tank_ox',
+    'P_tank_fuel',
+    'numengines',
+    'propmass'] 
+
 
     params = dict.fromkeys(paramnames)
 
@@ -104,11 +116,12 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
     if params['pambient'] is None:
         params['pambient']=14.7*const.psiToPa
     if params['pe'] is None:
-        params['pe'] = params['pambient'] * 6894.76
+        if 'er' not in args.keys() or args['er'] is None:
+            params['pe'] = params['pambient']
     if params['cf_efficiency'] is None:
         params['cf_efficiency'] = .95
     if params['isp_efficiency'] is None:
-        params['isp_efficiency']= .95
+        params['isp_efficiency'] = .9
 
     for arg in list(args):
         try:
@@ -122,16 +135,86 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
                 print("Parameter" + arg + "isn't supported or is mispelled")
 
     if params['CEA'] is None: # need to have cea object to do other stuff sio make sure to get this done first
-        try:
+        try: # fuel should be in format "Ethanol_65" for 65% ethanol, 35% water
             RA.makeEthanolBlend(int(regex.search(r'\d+', params['fuelname']).group()))
         except:
-            print(params['fuelname'])
+            print("fuel is " + params['fuelname'])
         if params['cr'] is None:
-            params['CEA'] = CEA_Obj(oxName=params['oxname'], fuelName=params['fuelname'], useFastLookup=1, isp_units='sec', cstar_units='m/s',
-                                    pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
-                                    enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
-                                    viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
-                                    make_debug_prints=False)
+            if params['rc'] is None:
+                params['CEA'] = CEA_Obj(oxName=params['oxname'], fuelName=params['fuelname'], useFastLookup=1, isp_units='sec', cstar_units='m/s',
+                                        pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
+                                        enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
+                                        viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
+                                        make_debug_prints=False)
+                if params['pe'] is None:
+                    if params['rm'] is None:
+                        params['rm'] = rm(params)
+                        params['pe'] = pe(params)
+                    else:
+                        params['pe'] = pe(params)
+            else:
+                params['CEA'] = CEA_Obj(oxName=params['oxname'], fuelName=params['fuelname'], useFastLookup=1, isp_units='sec', cstar_units='m/s',
+                                        pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
+                                        enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
+                                        viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=None,
+                                        make_debug_prints=False)
+                # here we calculate a bunch of stuff assuming ideal, then calculate cr, then make a new cea object with that cr
+                
+                togglerm = False
+                toggleer = False
+                togglerc = False
+                if params['rm'] is None:
+                    params['rm'] = rm(params)
+                    togglerm = True
+                if params['pe'] is None:
+                    params['pe'] = pe(params)
+                if params['pc'] is None:
+                    params['pc'] = pc(params)
+                    
+                if params['er'] is None:
+                    params['er'] = er(params)
+                    toggleer = True
+                if params['rc'] is None:
+                    params['rc'] = rc(params)
+                    togglerc = True
+                molandgam = params['CEA'].get_Chamber_MolWt_gamma(Pc=params['pc'], MR=params['rm'], eps=params['er']),  # kg/mol
+                params['mol_weight'] = molandgam[0][0]
+                params['gamma'] = molandgam[0][1]
+                if params['cf'] is None:
+                    params['cf'] = cf(params)
+                if params['at'] is None:
+                    params['at'] = at(params)
+                if params['ac'] is None:
+                    params['cr'] = (math.pi*params['rc']**2)/at(params)
+                else:
+                    params['cr'] = (params['ac'])/at(params)
+                params['CEA'] = CEA_Obj(oxName=params['oxname'], fuelName=params['fuelname'],useFastLookup=1,  isp_units='sec',
+                                        cstar_units='m/s',
+                                        pressure_units='Pa', temperature_units='K', sonic_velocity_units='m/s',
+                                        enthalpy_units='J/kg', density_units='kg/m^3', specific_heat_units='J/kg-K',
+                                        viscosity_units='millipoise', thermal_cond_units='W/cm-degC', fac_CR=params['cr'],
+                                        make_debug_prints=False)
+                params['cf'] = None
+                params['at'] = None
+                if togglerm:
+                    params['rm'] = None
+                if toggleer:
+                    params['er'] = None
+                if togglerc:
+                    params['rc'] = None
+                
+                PinjOverPcombEstimate = 1.0 + 0.54 / params['cr'] ** 2.2 # FROM https://rocketcea.readthedocs.io/en/latest/finite_area_comb.html
+                params['pinj']=params['pc']*params['CEA'].cea_obj.get_Pinj_over_Pcomb(
+                    Pc=params['CEA'].Pc_U.uval_to_dval(params['pc'])*PinjOverPcombEstimate, MR=1.0, fac_CR=params['cr'])
+                
+                params['cr'] = None
+                if params['pe'] is None:
+                        if params['rm'] is None:
+                            params['rm'] = rm(params)
+                            params['pe'] = pe(params)
+                        else:
+                            params['pe'] = pe(params)
+
         else:
             params['CEA'] = CEA_Obj(oxName=params['oxname'], fuelName=params['fuelname'],useFastLookup=1,  isp_units='sec',
                                     cstar_units='m/s',
@@ -142,6 +225,12 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
             PinjOverPcombEstimate = 1.0 + 0.54 / params['cr'] ** 2.2 # FROM https://rocketcea.readthedocs.io/en/latest/finite_area_comb.html
             params['pinj']=params['pc']*params['CEA'].cea_obj.get_Pinj_over_Pcomb(
                 Pc=params['CEA'].Pc_U.uval_to_dval(params['pc'])*PinjOverPcombEstimate, MR=1.0, fac_CR=params['cr'])
+            if params['pe'] is None:
+                    if params['rm'] is None:
+                        params['rm'] = rm(params)
+                        params['pe'] = pe(params)
+                    else:
+                        params['pe'] = pe(params)
 
         if params['rm'] is None:
             params['rm'] = rm(params)
@@ -197,31 +286,19 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
             except:
                 print('Couldnt calculate ' + param + " first time around")
 
-    #Do this twice so that if we need calcualted values for other values we can get them the second time around
-    for param in list(params):
-        if params[param] is None:
-            try:
-                params[param] = globals()[param](params)
-            except:
-                pass
-    for param in list(params):
-        if params[param] is None:
-            try:
-                params[param] = globals()[param](params)
-            except:
-                pass
-    for param in list(params):
-        if params[param] is None:
-            try:
-                params[param] = globals()[param](params)
-            except:
-                pass
-    for param in list(params):
-        if params[param] is None:
-            try:
-                params[param] = globals()[param](params)
-            except:
-                pass
+    #Do this many times so that if we need calcualted values for other values we can get them the second time around
+    changecount = -1
+    attempts = 0
+    while not changecount == 0 and attempts <= 5:
+        changecount = 0
+        attempts+= 1
+        for param in list(params):
+            if params[param] is None:
+                try:
+                    params[param] = globals()[param](params)
+                    changecount += 1
+                except:
+                    pass
     for param in list(params):
         if params[param] is None:
             try:
@@ -230,13 +307,22 @@ def SpreadsheetSolver(args : dict, defaults : dict = None):
                 print(param + " not yet supported")
     return params
 
+# Below are all the functions, pulled from various textbooks.
+# For some variables, there are multiple ways of calculating depending on
+# what inputs are provided. If your input combo is not supported, feel
+# free to add edge cases using if statements, or add clutter to these functions.
+# Anything that can be solved with a quick anaylitcal calucaltion should go here.
 def thrust(params):
     try:
-        return params['impulse']/params['time']
+        return params['mdot']*9.81*params['isp']
     except:
         print('Could not calculate Thrust')
         return None
 def time(params): #s
+    try:
+        return params['propmass']/params['mdot']/params['numengines']
+    except:
+        pass
     try:
         return params['impulse']/params['thrust']
     except:
@@ -251,16 +337,30 @@ def impulse(params): #N*s
 def rho_ox(params): #Kg/M^3 IMPLEMENT THIS USING FLUID PROPS
     try:
         pObj = get_prop(params['oxname'])
-        return 1000*pObj.SG_compressed(pObj.TdegRAtPsat(40),
+        if params['P_tank_ox'] is None:
+            return 1000 *pObj.SG_compressed(pObj.TdegRAtPsat(40),
                                   params['pc'] / const.psiToPa)
+        else:
+            return 1000*pObj.SG_compressed(pObj.TdegRAtPsat(40),
+                                  params['P_tank_ox'] / const.psiToPa)
     except:
         print("rocketProps busted lol")
     return None
 def rho_fuel(params): #Kg/M^3MPLEMENT THIS USING FLUID PROPS
     try:
         pObj = get_prop(params['fuelname'])
-        return 1000 * pObj.SG_compressed(293*const.degKtoR,
-                                         params['pc'] / const.psiToPa)
+        sattemp = pObj.TdegRAtPsat(40)
+        if sattemp < 293:
+            temp=sattemp/const.degKtoR
+        else:
+            temp = 293
+
+        if params['P_tank_fuel'] is None:
+            return 1000 * pObj.SG_compressed(temp*const.degKtoR,
+                                            params['pc'] / const.psiToPa)
+        else:
+            return 1000 * pObj.SG_compressed(temp*const.degKtoR,
+                                            params['P_tank_fuel'] / const.psiToPa)           
     except AttributeError:
         print('Fuel does not exist, assuming its a water ethanol blend')
         ethpercent = int(regex.search(r'\d+', params['fuelname']).group())/100
@@ -277,9 +377,8 @@ def rho_fuel(params): #Kg/M^3MPLEMENT THIS USING FLUID PROPS
 def pc(params): #Pa, calculate using throat conditions and backtrack
     print('You should input PC, will set up calculator later, now its just 700 psi (4.82 mpa)')
     return 700*6894.76
-def pe(params): #Pa, this hsould never be called
-    print('this should not be called this is a default value')
-    return 14.7
+def pe(params): #Pa, this is only called if you specified an er and want to get a exit ressure for it
+    return params['pc']/params['CEA'].get_PcOvPe(Pc=params['pc'], MR=params['rm'], eps=params['er'], frozen=0, frozenAtThroat=0)
 def g(params): #m/s^2 his hsould never be called
     print('this should not be called this is a default value')
 def rm(params): #o/f by weight
@@ -308,10 +407,13 @@ def rt(params): # m, radius of throat
     return math.sqrt(params['at']/const.pi)
 """THESE NEXT THREE ARE SUPER PRELIMINARY SIZINGS BASED OFF OF DIAGRAMS IN HUZEL AND HUANG PAGE 73"""
 def cr(params): # contraction ratio
-    CRInterpolator = interpolate.interp1d([i*const.inToM for i in [.2, .5, 1, 2, 5]],
-                                          [i*const.inToM for i in [15, 9, 5.5, 4, 3]], kind='linear') #CR vs Throat Diam, visually copied from textbook
-    print(CRInterpolator(params['rt']*2))
-    return CRInterpolator(params['rt']*2)
+    if params['rc'] is None:
+        CRInterpolator = interpolate.interp1d([i*const.inToM for i in [.2, .5, 1, 2, 5]],
+                                            [i*const.inToM for i in [15, 9, 5.5, 4, 3]], kind='linear') #CR vs Throat Diam, visually copied from textbook
+        print(CRInterpolator(params['rt']*2))
+        return CRInterpolator(params['rt']*2)
+    else:
+        return params['rc']**2/(params['rt']**2)
 def lc(params):
     CLInterpolator = interpolate.interp1d([i * const.inToM for i in [.2, .5, 1, 2, 5, 10]],
                                           [i * const.inToM for i in [1.8,3,4,5,7.5, 10]],
@@ -336,7 +438,12 @@ def mdot_ox(params):
 def mdot_fuel(params):
     return params['mdot']/(params['rm']+1)
 def er(params):
-    return params['CEA'].get_eps_at_PcOvPe(Pc=params['pc'], MR=params['rm'], PcOvPe=params['pc']/params['pambient'], frozen=0, frozenAtThroat=0)
+    if params['pe'] < 10000:
+        print("Noone ever expands completely to vacuum! Just input an ER, going to assume youre exapnding to 10000 pa for now")
+        params['pe'] =10000
+    return params['CEA'].get_eps_at_PcOvPe(Pc=params['pc'], MR=params['rm'], PcOvPe=params['pc']/params['pe'], frozen=0, frozenAtThroat=0)
+    Me = (((params['pe']/params['pc'])**((1-params['gamma'])/params['gamma'])-1)*2/(params['gamma']-1))**.5
+    er = ((params['gamma']+1)/2)**((-params['gamma']+1)/(2*(params['gamma']-1)))*((1+(params['gamma']-1)/2*(me**2))**((params['gamma']+1)/(2*(params['gamma']-1))))/me
 
 def cf(params):
     return params['cf_efficiency']*((2*params['gamma']**2)/(params['gamma']-1)*(2/(params['gamma']+1))**((params['gamma']+1)/(params['gamma']-1))*(1-(params['pe']/params['pc'])**((params['gamma']-1)/params['gamma'])))**.5+params['er']*(params['pe']-params['pambient'])/params['pc']
@@ -362,6 +469,67 @@ def nw(params):
 def fuelname(params):
 def oxname(params):
 """
+def kin_visc_fuel(params):
+    if not (get_prop(params['fuelname']) is None):
+        pObj = get_prop(params['fuelname'])
+        ethpercent = None
+        pObjWater = None
+    else:
+        try:
+            print('Fuel does not exist, assuming its a water ethanol blend')
+            ethpercent = int(regex.search(r'\d+', params['fuelname']).group()) / 100
+            pObj = get_prop("ethanol")
+            pObjWater = get_prop("water")
+        except:
+            print("rocketProps busted lol")
+    return viscosityfunc(293,  pObj, pObjWater, ethpercent)/params['rho_fuel'] # reutning this is Pa s m3/kg
+
+def kin_visc_ox(params):
+    try:
+        pObj = get_prop(params['oxname'])
+        ethpercent = None
+        pObjWater = None
+    except:
+        print("rocketProps cant find ox")
+    return viscosityfunc(293,  pObj, pObjWater, ethpercent)/params['rho_ox'] # reutning this is Pa s m3/kg
+def dyn_visc_fuel(params):
+    if not (get_prop(params['fuelname']) is None):
+        pObj = get_prop(params['fuelname'])
+        ethpercent = None
+        pObjWater = None
+    else:
+        try:
+            print('Fuel does not exist, assuming its a water ethanol blend')
+            ethpercent = int(regex.search(r'\d+', params['fuelname']).group()) / 100
+            pObj = get_prop("ethanol")
+            pObjWater = get_prop("water")
+        except:
+            print("rocketProps busted lol")
+    return viscosityfunc(293,  pObj, pObjWater, ethpercent) # reutning this is Pa s
+def dyn_visc_ox(params):
+    try:
+        pObj = get_prop(params['oxname'])
+        ethpercent = None
+        pObjWater = None
+    except:
+        print("rocketProps cant find ox")
+    return viscosityfunc(293,  pObj, pObjWater, ethpercent) # reutning this is Pa s
+
+def viscosityfunc(    temp, pObj, pObjWater, ethpercent):
+    if ethpercent is None:
+        return .1 * pObj.ViscAtTdegR(temp * const.degKtoR)
+    else:
+
+        viscosityeth = .1 * pObj.ViscAtTdegR(temp * const.degKtoR)
+        viscositywater = .1 * pObjWater.ViscAtTdegR(temp * const.degKtoR)
+
+        return  ethpercent * viscosityeth + (1 - ethpercent) * viscositywater
+
+
+
+
+def propmass(params):
+    return params['mdot']*params['time']
 
 
 

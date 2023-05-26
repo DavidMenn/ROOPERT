@@ -1,0 +1,425 @@
+"""Just a place to run stuff, currently has some test code
+usefull as it has a bunch of commonly used import statements
+CURRENT CONFIGURATION: FIRST ORDER SIZINGS FOR MID AUTUMN 2022"""
+import sys
+sys.path.insert(1,"./")
+import scipy.optimize
+#from Components.ThrustChamber import ThrustChamber
+from rocketcea.cea_obj import add_new_fuel, add_new_oxidizer, add_new_propellant
+import numpy as np
+import math
+import Components.ThrustChamber as ThrustChamber
+import Components.CoolingSystem as CS
+from rocketcea.cea_obj_w_units import CEA_Obj
+import Toolbox.RListGenerator as RListGenerator
+from matplotlib import cm
+import Toolbox.RocketCEAAssister as RA
+import os
+import Toolbox.IsentropicEquations as IE
+import Toolbox.RocketEquation as RE
+import difflib
+import re as regex
+from rocketprops.rocket_prop import get_prop
+import Toolbox.Constant as const
+import DetermineOptimalMR as DOMR
+import matplotlib.pyplot as plt
+import FirstOrderCalcs as FAC
+import Components.ThrustChamber as ThrustChamber
+import Components.StructuralApproximation as SA
+from scipy.optimize import minimize_scalar
+from Toolbox import PressureDropCalculator as PD
+import Toolbox.CADAssistant as CAD
+
+def fixedRSquareChanelSetup(params,xlist, rlist,chlist,chanelToLandRatio,twlist,nlist,helicitylist = None,dxlist = None):# MAKE SURE TO PASS SHIT  ALREADY FLIPPED
+    if helicitylist is None:
+        helicitylist = np.ones(np.size(xlist))*math.pi/2
+    if dxlist is None:
+        dxlist=np.ones(np.size(xlist))
+        index = 1
+        while index<np.size(xlist):
+            dxlist[index]=abs(xlist[index-1]-xlist[index])
+            index = index+1
+        dxlist[0]=dxlist[1] # this is shit, but I actuall calculate an extra spatial step at the start for some reason, so our CC is 1 dx too long. Makes the graphs easier to work with tho lol, off by one error be damned
+
+    #FOR NOW THIS IS ASSUMING SQUARE CHANELS!
+    #\     \  pavail\     \ 
+    # \     \ |----| \     \
+    #  \     \        \     \
+    #   \     \        \     \
+    # sin(helicitylist) pretty much makes sure that we are using the paralax angle to define the landwidth
+    perimavailable = math.pi*2*(rlist+twlist)/nlist*np.sin(helicitylist)
+    landwidthlist=perimavailable/(chanelToLandRatio+1)
+    cwlist=perimavailable-landwidthlist
+
+    alistflipped=chlist*cwlist
+    salistflipped=cwlist/dxlist
+    vlistflipped = params['mdot_fuel'] / params['rho_fuel'] / alistflipped / nlist
+    #if np.min(cwlist/chlist)>10:
+    #    raise Exception(f"Aspect Ratio is crazyyyyy")
+
+    hydraulicdiamlist=4*alistflipped/(2*chlist+2*cwlist)
+    coolingfactorlist = np.ones(xlist.size)
+    heatingfactorlist = np.ones(xlist.size)*.6 # .6 is from cfd last year, i think its bs but whatever
+    """Fin cooling factor func is 2*nf*CH+CW. nf is calculated as tanh(mL)/ml. Ml is calculated as sqrt(hpL^2/ka),
+    h=hc, P=perimeter in contact with coolant = dx, A = dx*landwidth/2 (assuming only half the fin works on the coolant, 2* factor in other spot,
+    I think I can do that because of axisymmetric type), k=kw, L=height of fin = chanel height
+    This is all from "A Heat Transfer Textbook, around page 166 and onwards."""
+    fincoolingfactorfunc = lambda hc,kw,ind : (math.tanh(chlist[ind]*math.sqrt(2*hc/kw*landwidthlist[ind]))/\
+            (chlist[ind]*math.sqrt(2*hc/kw*landwidthlist[ind])))*2*chlist[ind] + cwlist[ind]
+
+    return alistflipped, nlist, coolingfactorlist, heatingfactorlist, xlist, vlistflipped, twlist, hydraulicdiamlist, salistflipped, dxlist, fincoolingfactorfunc, cwlist
+
+def RunCoolingSystem(chlist,
+twlist,
+nlist,
+helicitylist,
+params,
+xlist,
+rlist,
+chanelToLandRatio, 
+TC ):
+
+    machlist,preslist,templist = TC.flowSimple(params)
+    alistflipped, nlist, coolingfactorlist, heatingfactorlist, xlist, vlistflipped, twlistflipped,\
+     hydraulicdiamlist, salistflipped, dxlist, fincoolingfactorfunc, cwlist   = fixedRSquareChanelSetup(params = params,
+                                        xlist = np.flip(xlist), rlist = np.flip(rlist),chlist = chlist ,
+                                        chanelToLandRatio = chanelToLandRatio ,twlist = twlist ,nlist = nlist,
+                                        helicitylist=helicitylist)
+
+    Twglist, hglist, Qdotlist, Twclist, hclist, Tclist, coolantpressurelist, qdotlist, fincoolingfactorlist, rholist, viscositylist, Relist = CS.steadyStateTemperatures(
+        None, TC, params, salistflipped, nlist, coolingfactorlist,
+        heatingfactorlist, xlist, vlistflipped, 293, params['pc'] + params['pc']*.2 + 50*const.psiToPa, twlistflipped, hydraulicdiamlist, rgaslist = rlist, fincoolingfactorfunc=fincoolingfactorfunc, dxlist = dxlist)
+
+    material = "inconel 715"
+    Structure = CS.StructuralAnalysis(rlist, xlist, nlist, chlist, cwlist, twlist, material)
+    FOSlist = Structure.FOS(Twglist,Twclist,coolantpressurelist,preslist)
+    xlist=np.flip(xlist) #idk whats flipping this haha but its something in the steadystatetemps function, so we have to flip it back
+    return alistflipped, xlist, vlistflipped,\
+     hydraulicdiamlist, salistflipped, dxlist, fincoolingfactorfunc, cwlist,\
+        Twglist, hglist, Qdotlist, Twclist, hclist, Tclist, coolantpressurelist, qdotlist, fincoolingfactorlist, rholist, viscositylist, Relist,\
+            FOSlist
+
+args = {
+        'thrust': 1200 * const.lbToN,  # Newtons
+        'time': 7.5,  # s
+        # 'rho_ox' : 1141, #Kg/M^3
+        # 'rho_fuel' : 842,
+        'pc': 300 * const.psiToPa,
+        'pe': 10 * const.psiToPa,
+        'phi':1,
+       # 'cr': 5.295390217,
+        'lstar': 1.24,
+        'fuelname': 'Ethanol_75',
+        'oxname': 'N2O',
+        'throat_radius_curvature': .0254 *2,
+        'dp': 150 * const.psiToPa,
+        'impulseguess' :  495555.24828424345,
+        'rc' : .08,
+        'thetac' : (35*math.pi/180),
+        'isp_efficiency' : .9} #623919}
+configtitle = "Subscale 3_29_23 Test Plots"
+output=True
+
+
+# FIRST DETERMINE INITIAL ESTIMATES FOR IDEAL PARAMS
+path=os.path.join( "Configs",configtitle)
+if output:
+    os.makedirs(path,exist_ok=True)
+ispmaxavg, mrideal, phiideal, ispmaxeq, ispmaxfrozen = DOMR.optimalMr(args, plot=output)
+if output:
+    plt.savefig(os.path.join(path, "idealisp.png"))
+print(f"isp max = {ispmaxavg}, ideal mr is {mrideal}")
+args['rm']=mrideal
+params = FAC.SpreadsheetSolver(args)
+
+# get pressure drop
+
+
+
+dt=.025
+
+#params['thrust'] = totalmass*thrusttoweight_approx*9.81 #recompute with a resonable thrust
+params = FAC.SpreadsheetSolver(args)
+miapprox,lambdainit,totalmass, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank  = SA.mass_approx(params['pc'],params['dp'], 12, params['rho_fuel'],params['rho_ox'], params['thrust'], params['isp'], params['time'], params['rm'])
+L, hlist, vlist, thrustlist, isplist, machlist =\
+    RE.rocketEquationCEA(params, mi = miapprox, thrust = params['thrust'], burntime = params['time'],\
+         L = None, H = None, dt=dt, Af=None, ispcorrection = None)
+newargs = {
+    'thrust': params['thrust'],  # Newtons
+    'time': params['time'],  # s
+    'pc': params['pc'],
+    'pe': params['pe'],
+    'rm' : params['rm'],
+    'rc': params['rc'],
+    'lstar': params['lstar'],
+    'fuelname': params['fuelname'],
+    'oxname': params['oxname'],
+    'throat_radius_curvature': params['throat_radius_curvature'],
+    'dp': params['dp'],
+    'isp_efficiency' : params['isp_efficiency']}
+params = FAC.SpreadsheetSolver(newargs)
+# now do it again with cr instead of rc to get all the specific values for finite combustors
+newargs = {
+    'thrust': params['thrust'],  # Newtons
+    'time': params['time'],  # s
+    'pc': params['pc'],
+    'pe': params['pe'],
+    'rm' : params['rm'],
+    'cr': params['cr'],
+    'lstar': params['lstar'],
+    'fuelname': params['fuelname'],
+    'oxname': params['oxname'],
+    'throat_radius_curvature': params['throat_radius_curvature'],
+    'dp': params['dp'],
+    'isp_efficiency' : params['isp_efficiency']}
+params = FAC.SpreadsheetSolver(newargs)
+
+if output:
+    with open(os.path.join(path, "mass_output.txt"), "w") as f:
+        print(f"This is supposed to be a CSV! Eventually it should be passed params and get all that data too!", file=f)
+            #overwriting current file
+mis, lambdas, totalmasses, wstruct, newheight, heightox, heightfuel, vol_ox, vol_fuel, P_tank = \
+    SA.mass_approx(params['pc'], params['dp'], 12, params['rho_fuel'], params['rho_ox'],
+                                                params['thrust'], params['isp'], params['time'], params['rm'],
+                printoutput=output, outputdir=path)
+if output:
+    with open(os.path.join(path, "mass_output.txt"), "a") as f:
+        for param in list(params):
+            if params[param] is None:
+                print(param + f", NONE", file=f)
+            else:
+                #try:
+                #    print(param + f", " +'%.3f'%(params[param]), file=f)
+                #except:
+                print(param + f", {params[param]}", file=f)
+        print(f"Deltav, {params['isp']*9.81*math.log(1/L)}", file=f)
+    title = f"Fuel = {params['fuelname']}, " \
+            f"Ox = {params['oxname']}, " \
+            f"mi = {int(((1 / lambdas) * params['mdot'] * params['time'] - params['mdot'] * params['time']))}," \
+            f" mp = {int(params['mdot'] * params['time'])}, " \
+            f"Mtotal = {int((1 / lambdas) * params['mdot'] * params['time'])}"
+    RE.ShitPlotter(hlist, vlist, thrustlist, isplist, machlist, time=params['time'], title=title, dt=dt)
+    plt.savefig(os.path.join(path, "trajectory.png"))
+### Now that we have the "optimal rocket", figure out flow and wall temps
+
+#conevol = math.pi*params['rc']**3*math.tan(params['thetac'])/3 - math.pi*params['rt']**3*math.tan(params['thetac'])/3
+if params['thetac'] is None:
+    params['thetac'] = math.pi*35/180
+volfunc = lambda lc : math.pi*params['rc']**2*lc  +\
+    math.pi*params['rc']**3/math.tan(params['thetac'])/3 -\
+        math.pi*params['rt']**3/math.tan(params['thetac'])/3
+lstarminimizer = lambda lc : volfunc(lc)/(params['rt']**2*math.pi) - params['lstar']
+result = scipy.optimize.root(lstarminimizer, .05, args=(), method='hybr', jac=None, tol=None, callback=None, options=None)
+params['lc']=result['x'][0]
+xlist = np.linspace(0, params['lc'] + (params['rc'] - params['rt']) / math.tan(params['thetac']) + params['ln_conical'], 100)
+    
+rlist,xlist = RListGenerator.paraRlist(xlist, params['lc'], params['rc'],
+                                params['lc'] + (params['rc'] - params['rt'])/(math.tan(params['thetac'])),
+                                params['rt'],
+                                params['lc'] + (params['rc'] - params['rt'])/(math.tan(params['thetac'])) + params['ln_conical'],
+                                params['re'], params['lc']*1.5, .0254*1.5, .0254*.4, math.pi/6, 8*math.pi/180, params['er'])  # xlist, xns, rc, xt, rt, xe, re
+# xlist, xns, rc, xt, rt_sharp, xe_cone, re_cone, rcf, rtaf, rtef, thetai, thetae, ar
+
+
+
+TC = ThrustChamber.ThrustChamber(rlist,xlist)
+print(TC.rt, TC.xt, TC.xns)
+
+machlist,preslist,templist = TC.flowSimple(params)
+xlistflipped = np.flip(xlist)
+rlistflipped  = np.flip(rlist)
+chlist  = (TC.rt/rlistflipped)**.5*.003 
+twlist  = (rlistflipped/TC.rt)*.001 
+nlist  = np.ones(len(xlist))*44
+ewlist  = np.ones(len(xlist))*.005
+#HELICITY IS DEFINED AS 90 DEGREES BEING A STAIGHT CHANEL, 0 DEGREES BEING COMPLETILY CIRCUMFRNEITAL
+helicitylist  = (rlistflipped**1.5/TC.rt**1.5)*45*math.pi/180
+#chanelToLandRatio = 2
+
+
+
+for index in range(0,np.size(helicitylist )):
+    if helicitylist [index]>math.pi/2:
+        helicitylist [index] = math.pi/2
+
+perimavailable = math.pi*2*(np.flip(rlist)+twlist)/nlist*np.sin(helicitylist)
+
+chanelToLandRatio=2#1/(1-min(cwlist_full)/min(perimavailable))-1#
+
+og_mdot = params['mdot_fuel'] #we are dumpong half the fuel
+index=0
+test_points=[og_mdot, og_mdot*2, og_mdot*3]
+for mdot_temp in test_points:
+    if index==0:
+        params['mdot_fuel'] = mdot_temp
+        alistflippedmat, xlistmat, vlistflippedmat,\
+            hydraulicdiamlistmat, salistflippedmat, dxlistmat, fincoolingfactorfuncmat, cwlistmat,\
+                Twglistmat, hglistmat, Qdotlistmat, Twclistmat, hclistmat, Tclistmat, coolantpressurelistmat, qdotlistmat, fincoolingfactorlistmat, rholistmat, viscositylistmat, Relistmat, FOSlistmat = RunCoolingSystem(chlist,
+        twlist,
+        nlist,
+        helicitylist,
+        params,
+        xlist,
+        rlist,
+        chanelToLandRatio, 
+        TC )
+    elif index==1:
+        params['mdot_fuel'] = mdot_temp
+        alistflipped, xlist, vlistflipped,\
+            hydraulicdiamlist, salistflipped, dxlist, fincoolingfactorfunc, cwlist,\
+                Twglist, hglist, Qdotlist, Twclist, hclist, Tclist, coolantpressurelist, qdotlist, fincoolingfactorlist, rholist, viscositylist, Relist, FOSlist = RunCoolingSystem(chlist,
+        twlist,
+        nlist,
+        helicitylist,
+        params,
+        xlist,
+        rlist,
+        chanelToLandRatio, 
+        TC )
+        
+        alistflippedmat = np.stack((alistflippedmat,alistflipped))
+        xlistmat = np.stack((xlistmat,xlist))
+        vlistflippedmat = np.stack((vlistflippedmat,vlistflipped))
+        
+        hydraulicdiamlistmat = np.stack((hydraulicdiamlistmat,hydraulicdiamlist))
+        salistflippedmat = np.stack((salistflippedmat,salistflipped))
+        dxlistmat = np.stack((dxlistmat,dxlist))
+        #fincoolingfactorfuncmat = np.stack((fincoolingfactorfuncmat,fincoolingfactorfunc))
+        cwlistmat = np.stack((cwlistmat,cwlist))
+        Twglistmat = np.stack((Twglistmat,Twglist))
+        hglistmat = np.stack((hglistmat,hglist))
+        Qdotlistmat = np.stack((Qdotlistmat,Qdotlist))
+        Twclistmat = np.stack((Twclistmat,Twclist))
+        hclistmat = np.stack((hclistmat,hclist))
+        Tclistmat = np.stack((Tclistmat,Tclist))
+        coolantpressurelistmat = np.stack((coolantpressurelistmat,coolantpressurelist))
+        qdotlistmat = np.stack((qdotlistmat,qdotlist))
+        fincoolingfactorlistmat = np.stack((fincoolingfactorlistmat,fincoolingfactorlist))
+        rholistmat = np.stack((rholistmat,rholist))
+        viscositylistmat = np.stack((viscositylistmat,viscositylist))
+        Relistmat = np.stack((Relistmat,Relist))
+        FOSlistmat = np.stack((FOSlistmat,FOSlist))
+    else:
+        params['mdot_fuel'] = mdot_temp
+        alistflipped, xlist, vlistflipped,\
+            hydraulicdiamlist, salistflipped, dxlist, fincoolingfactorfunc, cwlist,\
+                Twglist, hglist, Qdotlist, Twclist, hclist, Tclist, coolantpressurelist, qdotlist, fincoolingfactorlist, rholist, viscositylist, Relist, FOSlist = RunCoolingSystem(chlist,
+        twlist,
+        nlist,
+        helicitylist,
+        params,
+        xlist,
+        rlist,
+        chanelToLandRatio, 
+        TC )
+        
+        alistflippedmat = np.concatenate((alistflippedmat,np.reshape(alistflipped,(1,len(alistflipped)))))
+        xlistmat = np.concatenate((xlistmat,np.reshape(xlist,(1,len(xlist)))))
+        vlistflippedmat = np.concatenate((vlistflippedmat,np.reshape(vlistflipped,(1,len(vlistflipped)))))
+        
+        hydraulicdiamlistmat = np.concatenate((hydraulicdiamlistmat,np.reshape(hydraulicdiamlist,(1,len(hydraulicdiamlist)))))
+        salistflippedmat = np.concatenate((salistflippedmat,np.reshape(salistflipped,(1,len(salistflipped)))))
+        dxlistmat = np.concatenate((dxlistmat,np.reshape(dxlist,(1,len(dxlist)))))
+        #fincoolingfactorfuncmat = np.concatenate((fincoolingfactorfuncmat,np.reshape(fincoolingfactorfunc,(1,len(fincoolingfactorfunc)))))
+        cwlistmat = np.concatenate((cwlistmat,np.reshape(cwlist,(1,len(cwlist)))))
+        Twglistmat = np.concatenate((Twglistmat,np.reshape(Twglist,(1,len(Twglist)))))
+        hglistmat = np.concatenate((hglistmat,np.reshape(hglist,(1,len(hglist)))))
+        Qdotlistmat = np.concatenate((Qdotlistmat,np.reshape(Qdotlist,(1,len(Qdotlist)))))
+        Twclistmat = np.concatenate((Twclistmat,np.reshape(Twclist,(1,len(Twclist)))))
+        hclistmat = np.concatenate((hclistmat,np.reshape(hclist,(1,len(hclist)))))
+        Tclistmat = np.concatenate((Tclistmat,np.reshape(Tclist,(1,len(Tclist)))))
+        coolantpressurelistmat = np.concatenate((coolantpressurelistmat,np.reshape(coolantpressurelist,(1,len(coolantpressurelist)))))
+        qdotlistmat = np.concatenate((qdotlistmat,np.reshape(qdotlist,(1,len(qdotlist)))))
+        fincoolingfactorlistmat = np.concatenate((fincoolingfactorlistmat,np.reshape(fincoolingfactorlist,(1,len(fincoolingfactorlist)))))
+        rholistmat = np.concatenate((rholistmat,np.reshape(rholist,(1,len(rholist)))))
+        viscositylistmat = np.concatenate((viscositylistmat,np.reshape(viscositylist,(1,len(viscositylist)))))
+        Relistmat = np.concatenate((Relistmat,np.reshape(Relist,(1,len(Relist)))))
+        FOSlistmat = np.concatenate((FOSlistmat,np.reshape(FOSlist,(1,len(FOSlist)))))
+    index+=1
+
+if True:
+    #Twglist, hglist, qdotlist, Twclist, hclist, Tclist, coolantpressurelist, qdotlist, Trlist, rholist, viscositylist, Relist = CS.steadyStateTemperatures(None,TC, params, salistflipped,n, coolingfactorlist,
+    #                        heatingfactorlist, xlistflipped, vlistflipped ,293, params['pc']+params['dp'][0], twlistflipped, hydraulicdiamlist)
+
+    title="ChamberTemps"
+    fig, axs = plt.subplots(3,3)
+    fig.suptitle(title)
+
+   
+
+    title=f"Gas Side Heat Transfer Coeff"
+    plt.figure()
+    plt.plot(xlistflipped,hglistmat[0,:] , 'g', label=f"Gas Side Wall Temp, K, mdot={round(test_points[0],3)}")
+    plt.plot(xlistflipped,hglistmat[1,:] , 'g--', label=f"Gas Side Wall Temp, K, mdot={round(test_points[1],3)}")
+    plt.plot(xlistflipped, hglistmat[2,:] , 'g:', label=f"Gas Side Wall Temp, K, mdot={round(test_points[2],3)}")
+    plt.xlabel("Axial Position [m From Injector Face]")
+    plt.ylabel("h_g [W/(m^2k)]")
+    plt.legend()
+    plt.title(title)
+    plt.savefig(os.path.join(path, "gassideheattransfer.png"))
+                             
+    title=f"Coolant Side Heat Transfer Coeff"
+    plt.figure()
+    plt.plot(xlistflipped,hclistmat[0,:] , 'r', label=f"Gas Side Wall Temp, K, mdot={round(test_points[0],3)}")
+    plt.plot(xlistflipped,hclistmat[1,:] , 'r--', label=f"Gas Side Wall Temp, K, mdot={round(test_points[1],3)}")
+    plt.plot(xlistflipped, hclistmat[2,:] , 'r:', label=f"Gas Side Wall Temp, K, mdot={round(test_points[2],3)}")
+    plt.xlabel("Axial Position [m From Injector Face]")
+    plt.ylabel("h_c [W/(m^2k)]")
+    plt.legend()
+    plt.title(title)
+    plt.savefig(os.path.join(path, "coolantsideheattransfer.png"))
+    
+    title=f"Factor Of Safety"
+    plt.figure()
+    plt.plot(xlistflipped,FOSlistmat[0,:] , 'b', label=f"Gas Side Wall Temp, K, mdot={round(test_points[0],3)}")
+    plt.plot(xlistflipped,FOSlistmat[1,:] , 'b--', label=f"Gas Side Wall Temp, K, mdot={round(test_points[1],3)}")
+    plt.plot(xlistflipped, FOSlistmat[2,:] , 'b:', label=f"Gas Side Wall Temp, K, mdot={round(test_points[2],3)}")
+    plt.xlabel("Axial Position [m From Injector Face]")
+    plt.ylabel("hFOS")
+    plt.legend()
+    plt.title(title)
+    plt.savefig(os.path.join(path, "FOS.png"))
+
+    title=f"Chamber Wall Temperatures: Temp At Injector Face = {Twglist[-1]}"
+    plt.figure()
+    plt.plot(xlistflipped,Twglistmat[0,:] , 'g', label=f"Gas Side Wall Temp, K, mdot={round(test_points[0],3)}")
+    plt.plot(xlistflipped,Twclistmat[0,:] , 'r') # row=0, column=0
+    plt.plot(xlistflipped,Tclistmat[0,:] , 'b') # 
+    plt.plot(xlistflipped,Twglistmat[1,:] , 'g--')
+    plt.plot(xlistflipped,Twclistmat[1,:] , 'r--', label=f"CoolantSide Wall Temp, K, mdot={round(test_points[1],3)}") # row=0, column=0
+    plt.plot(xlistflipped,Tclistmat[1,:] , 'b--') # 
+    plt.plot(xlistflipped,Twglistmat[2,:] , 'g:')
+    plt.plot(xlistflipped,Twclistmat[2,:] , 'r:') # row=0, column=0
+    plt.plot(xlistflipped,Tclistmat[2,:] , 'b:', label=f"Coolant Temp, K, mdot={round(test_points[2],3)}") # 
+    plt.xlabel("Axial Position [m From Injector Face]")
+    plt.ylabel("Temperature [K]")
+    plt.legend()
+    plt.title(title)
+    plt.savefig(os.path.join(path, "ChamberTemps_LachlanFormat.png"))
+
+    for i in range(len(test_points)):
+        print(f"max  gas side temp for  mdot={round(test_points[i],3)} is {np.max(Twglistmat[i,:] )} K")
+        print(f"max  temp diff for  mdot={round(test_points[i],3)} is {np.max(Twglistmat[i,:]  - Twclistmat[1,:])} K")
+        print(f"Recovery temp at max temp location for for  mdot={round(test_points[i],3)} is {Relistmat[i,np.argmax(Twglistmat[i,:] )]} K ")
+
+   
+
+
+
+    plt.show()
+
+    print("end")
+
+if ~output:
+    params['mi'] = mis
+    params['L'] = lambdas
+    params['M'] = totalmasses
+    params['wstruct'] = wstruct
+    params['newheight'] = newheight
+    params['heightox'] = heightox
+    params['heightfuel'] = heightfuel
+    params['vol_ox'] = vol_ox
+    params['vol_fuel'] = vol_fuel
+    params['P_tank'] = P_tank
+    params['twg_max'] = np.max(Twglist)
+    params['twc_max'] =  np.max(Twclist)

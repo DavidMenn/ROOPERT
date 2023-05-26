@@ -38,6 +38,7 @@ class ThrustChamber(object):
         self.at = math.pi * self.rt ** 2
 
         self.xns = xlist[ np.where( np.diff( rlist ) < 0)[0][0] ] #finds first instance of deviation, ns stands for nozzle start
+        self.xe = xlist[-1] 
 
         self.cr = (rlist[0]**2)/(self.rt**2)
         self.eps = (rlist[-1]**2)/(self.rt**2)
@@ -46,40 +47,48 @@ class ThrustChamber(object):
                                                      self.alist, kind='linear')
 
 
-
-
-#Flow props are dicts in format {'name': String, 'Mdot' : int (kg/s),
+        #flowsimple working on, xlist and rlist
+        # define the mach number first by xlist and rlist, then use the calculated mach number to find pressure and temperature 
+        #Flow props are dicts in format {'name': String, 'Mdot' : int (kg/s),
 
     def flowSimple(self, params):
         machlist=np.zeros(self.xlist.size)
         preslist=np.zeros(self.xlist.size)
         templist = np.zeros(self.xlist.size)
 
+        gammaC2Tlist = np.zeros(self.xlist.size)
+        gammaT2Elist = np.zeros(self.xlist.size)
+        
+        for i in range(len(gammaC2Tlist)):
+            gammaC2Tlist[i] = ((self.xlist[i] - 0)/(self.xt - 0))*(params['gamma_throat'] - params['gamma']) + params['gamma']
+        for i in range(len(gammaT2Elist)):
+            gammaT2Elist[i] = (((self.xlist[i] - self.xt)/(self.xe - self.xt))*(params['gamma_exit'] - params['gamma_throat']) + params['gamma_throat'])
+
+        
         totalTCC = None
         for index in -np.arange(-np.where(self.xlist==self.xns)[0][0],1): #iterate backwards through the combustion chamber
             x=self.xlist[index]
             preslist[index]=params['pinj']+(params['pc']-params['pinj'])*x/self.xns
-            machlist[index]=Ise.machFromP(params['pinj'],preslist[index],params['gamma'])
+            machlist[index]=Ise.machFromP(params['pinj'],preslist[index],params['gamma_exit'])
             if totalTCC is None:
-                totalTCC = Ise.totalT(params['temp_c'],params['gamma'],machlist[np.where(self.xlist==self.xns)[0][0]])
-            templist[index] = Ise.TFromTotalT(totalTCC,params['gamma'],machlist[index])
+                totalTCC = Ise.totalT(params['temp_c'],gammaC2Tlist[index],machlist[np.where(self.xlist==self.xns)[0][0]])
+            templist[index] = Ise.TFromTotalT(totalTCC,gammaC2Tlist[index],machlist[index])
 
         #THIS IS SIMPE BECAUSE I"M ASSUMING YOU MADE SURE IT WAS CHOKED AT THE THROAT, also assume totalT is constant which is false (no losses?!)
         for index in np.arange(np.where(self.xlist==self.xns)[0][0],np.where(self.xlist==self.xt)[0][0]): #iterate to the throat from ns
-            machlist[index] = Ise.machFromArea(self.alist[index],self.at,params['gamma'],supersonic=False)
-            preslist[index]= Ise.PFromTotalP(params['pinj'],params['gamma'],machlist[index])
-            templist[index] = Ise.TFromTotalT(totalTCC,params['gamma'],machlist[index])
+            machlist[index] = Ise.machFromArea(self.alist[index],self.at,gammaC2Tlist[index],supersonic=False)
+            preslist[index]= Ise.PFromTotalP(params['pinj'],gammaC2Tlist[index],machlist[index])
+            templist[index] = Ise.TFromTotalT(totalTCC,gammaC2Tlist[index],machlist[index])
 
-        index=np.where(self.xlist==self.xt)[0][0]
+        index=np.where(self.xlist==self.xt)[0][0] #throat
         machlist[index] = 1
-        preslist[index] = Ise.PFromTotalP(params['pinj'], params['gamma'], machlist[index])
-        templist[index] = Ise.TFromTotalT(totalTCC, params['gamma'], machlist[index])
+        preslist[index] = Ise.PFromTotalP(params['pinj'], params['gamma_throat'], machlist[index])
+        templist[index] = Ise.TFromTotalT(totalTCC, params['gamma_throat'], machlist[index])
 
-        for index in np.arange(np.where(self.xlist == self.xt)[0][0]+1,
-                               self.xlist.size):  # iterate to the throat from ns
-            machlist[index] = Ise.machFromArea(self.alist[index], self.at, params['gamma'], supersonic=True)
-            preslist[index] = Ise.PFromTotalP(params['pinj'], params['gamma'], machlist[index])
-            templist[index] = Ise.TFromTotalT(totalTCC, params['gamma'], machlist[index])
+        for index in np.arange(np.where(self.xlist == self.xt)[0][0]+1, self.xlist.size):  # from throat to nozzle end
+            machlist[index] = Ise.machFromArea(self.alist[index], self.at, gammaT2Elist[index], supersonic=True)
+            preslist[index] = Ise.PFromTotalP(params['pinj'], gammaT2Elist[index], machlist[index])
+            templist[index] = Ise.TFromTotalT(totalTCC, gammaT2Elist[index], machlist[index])
 
         self.machlist=machlist
         self.templist=templist
